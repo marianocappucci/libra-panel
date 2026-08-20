@@ -1,0 +1,99 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "libra-panel"
+version = "0.1.0"
+description = "Panel del dueño multisucursal: los números de N sucursales en una pantalla, preguntándoselos por HTTP."
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    # `SessionAuth` + `UserRepository` + `build_json_api_auth_router` (el login
+    # del CLIENTE, con tabla `usuarios`, recupero por mail y `auth_log`), y
+    # `crypto.cifrar/descifrar` para las credenciales de sucursal en reposo.
+    #
+    # 🔴 v0.29.0 no es un pin de rutina: es la version que trae
+    # `LIBRA_PANEL_TOKEN` / `X-Panel-Auth`. Este repo es el consumidor del OTRO
+    # lado de ese header — el que lo manda. Bajarlo deja al panel sin forma de
+    # autenticarse contra ninguna sucursal.
+    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.29.0",
+    # Solo por `security_headers`, que es lo que hace que los seis productos y
+    # el backoffice manden las mismas cabeceras. Se pinea igual que el resto de
+    # la familia aunque el panel no use nada mas de este motor: el dia que
+    # cambien las cabeceras, cambian en todos a la vez.
+    #
+    # NO se usa `libracore.admin` ni `provisioning`: el panel no administra
+    # instancias ni toca Docker. Por eso su imagen no lleva el cliente de
+    # Docker, a diferencia de la de libra-backoffice.
+    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.41.0",
+    "fastapi>=0.111,<1",
+    "uvicorn[standard]>=0.30,<1",
+    # El panel le habla a cada sucursal por HTTP, en paralelo y con timeout.
+    "httpx>=0.27,<1",
+    "sqlalchemy>=2.0",
+    # PostgreSQL es el unico motor de la familia (decidido 2026-08-12). psycopg
+    # 3, que es el driver de la familia — ver la guarda de `db.configure()`.
+    "psycopg[binary]>=3.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6",
+    "ruff>=0.13",
+    # Trae el plugin de pytest que corre los tests `async def`. Sin el, los
+    # tests de las N llamadas en paralelo se saltearian con un warning y la
+    # suite quedaria verde sin haberlos ejecutado — el mismo cuidado que toma
+    # libra-backoffice.
+    "anyio>=4",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["libra_panel"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# La zona horaria de la suite se fija en `tests/conftest.py` (TZ + `tzset()`) y
+# no se hereda de la maquina: el panel calcula "hoy" y "el mes en curso" para
+# el periodo por defecto, y una maquina en UTC hace que el primer y el ultimo
+# dia del mes den distinto en local que en CI. Estandar de la familia desde el
+# 2026-08-12. Se hace en el conftest y no aca para no sumar `pytest-env`.
+
+# Mismo ruleset curado que los otros repos de la familia (fijado 2026-07-31):
+# da cero hallazgos hoy, asi que cualquier rojo futuro es una regresion real y
+# no deuda vieja. F401 queda afuera a proposito -- los re-exports de
+# `__init__.py` son API publica, no imports muertos.
+[tool.ruff]
+line-length = 120
+extend-exclude = ["frontend", "node_modules"]
+
+[tool.ruff.lint]
+select = [
+    "E9",
+    "F63",
+    "F7",
+    "F811",
+    "F822",
+    "F823",
+    "F841",
+    "F541",
+    "F502", "F506", "F522", "F524",
+    "F601", "F602",
+]
+
+[tool.coverage.run]
+source = ["libra_panel"]
+branch = true
+omit = ["*/tests/*", "*/.venv/*"]
+
+[tool.coverage.report]
+show_missing = true
+# Trinquete, no meta: se fija 3 puntos por debajo de lo medido al crearse el
+# repo, asi que hoy pasa holgado y lo unico que puede ponerlo en rojo es una
+# regresion. Cuando la cobertura suba de verdad, subir tambien este numero --
+# nunca bajarlo para que pase un cambio.
+fail_under = 91

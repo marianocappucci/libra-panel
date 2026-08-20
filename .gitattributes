@@ -1,0 +1,14 @@
+# LF en todo el repo, sin importar desde qué sistema se edite.
+#
+# Existe porque este repo se edita a veces desde Windows a través de la ruta
+# UNC de WSL (`\\wsl.localhost\...`), y ese camino escribe CRLF sin avisar: un
+# `.sh` con CRLF no arranca en Linux (`bad interpreter: /bin/bash^M`) y un
+# checkout normal muestra el archivo entero como modificado.
+* text=auto eol=lf
+
+# Binarios: que git no los toque.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary

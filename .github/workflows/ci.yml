@@ -1,0 +1,227 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+# Una sola corrida viva por rama. Si entra un push nuevo mientras está
+# corriendo, se cancela la anterior en vez de pagar las dos: su resultado ya no
+# le sirve a nadie, porque reporta sobre un código que no es el que quedó en la
+# rama.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      # 🔴 PostgreSQL de verdad, no SQLite. Es la decisión de familia del
+      # 2026-08-12, y este repo tiene una razón propia: la
+      # `UNIQUE(usuario_id, sucursal_id)` que impide que una sucursal entre dos
+      # veces en el consolidado no la chequea SQLite con el pragma apagado.
+      #
+      # `postgres:16` y no `postgres:16-alpine`: la misma imagen que corre en
+      # producción. El collation viene de la imagen y alpine ordena por bytes.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: panel
+          POSTGRES_PASSWORD: panel
+          POSTGRES_DB: panel
+          TZ: America/Argentina/Buenos_Aires
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U panel -d panel"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      LIBRA_PANEL_TEST_DATABASE_URL: postgresql://panel:panel@127.0.0.1:5432/panel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # libracore y libraauth son repos de la familia; se accede con deploy
+      # keys SSH de solo lectura, una por repo-motor.
+      #
+      # Por qué deploy keys y no un PAT: un PAT vence sin aviso y tumba el CI
+      # de todos los repos que lo comparten a la vez (y en el VPS tumbó un
+      # deploy real: incidente Restolibra del 2026-07-25). Las deploy keys no
+      # vencen.
+      #
+      # El alias `github-<repo>` con IdentitiesOnly no es adorno: con dos
+      # claves cargadas SSH las ofrece en orden y GitHub autentica con la
+      # primera que acepta, que puede no ser la del repo que se está clonando —
+      # una deploy key ES una identidad por repo.
+      - name: Configurar acceso a las dependencias privadas
+        env:
+          LIBRACORE_DEPLOY_KEY: ${{ secrets.LIBRACORE_DEPLOY_KEY }}
+          LIBRAAUTH_DEPLOY_KEY: ${{ secrets.LIBRAAUTH_DEPLOY_KEY }}
+        working-directory: .
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          configurar() {
+            repo=$1; clave=$2
+            if [ -z "$clave" ]; then
+              echo "::error::Falta el secret con la deploy key de $repo en este repositorio."
+              exit 1
+            fi
+            printf '%s\n' "$clave" > ~/.ssh/id_"$repo"
+            chmod 600 ~/.ssh/id_"$repo"
+            printf 'Host github-%s\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/id_%s\n  IdentitiesOnly yes\n' \
+              "$repo" "$repo" >> ~/.ssh/config
+            git config --global \
+              url."git@github-$repo:marianocappucci/$repo".insteadOf \
+              "https://github.com/marianocappucci/$repo"
+          }
+          configurar libracore "$LIBRACORE_DEPLOY_KEY"
+          configurar libraauth "$LIBRAAUTH_DEPLOY_KEY"
+
+      # Confirma que cada clave autentica contra SU repo y no contra otro: es
+      # exactamente el modo de fallar que motiva los alias, y sin este paso
+      # recién se notaría dentro del `pip install`, como un error de git que no
+      # dice cuál de las dos claves se usó.
+      - name: Verificar que cada deploy key resuelve a su propio repo
+        working-directory: .
+        run: |
+          for repo in libracore libraauth; do
+            saludo=$(ssh -o StrictHostKeyChecking=yes -T "git@github-$repo" 2>&1 || true)
+            echo "$repo -> $saludo"
+            case "$saludo" in
+              *"marianocappucci/$repo"*) ;;
+              *) echo "::error::La deploy key de $repo no resuelve a marianocappucci/$repo."; exit 1 ;;
+            esac
+          done
+
+      - name: Instalar el paquete y sus dev deps
+        run: pip install -e ".[dev]"
+
+      # Lint antes que los tests: tarda segundos y su rojo se lee mucho más
+      # fácil que el de una suite. El ruleset vive en pyproject.toml y está
+      # curado para dar cero hallazgos — un rojo acá es una regresión.
+      - name: Lint (ruff)
+        run: ruff check .
+
+      # Que la variable exista no prueba que la suite la use: el conftest sale
+      # con error si falta, así que este paso confirma contra QUÉ motor corre
+      # antes de leer un verde.
+      - name: Confirmar contra qué base corre la suite
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          url = os.environ["LIBRA_PANEL_TEST_DATABASE_URL"]
+          with psycopg.connect(url) as conn:
+              version = conn.execute("SELECT version()").fetchone()[0]
+          print("La suite corre contra:", version.split(",")[0])
+          assert "PostgreSQL" in version
+          PY
+
+      # El piso de cobertura (`fail_under`) está en pyproject.toml: es un
+      # trinquete fijado 3 puntos debajo de lo medido, no una meta.
+      - name: Tests
+        run: pytest -v --cov --cov-report=term-missing
+
+  # En su propio job: no comparte nada con el de Python, y así el reporte dice
+  # cuál de los dos falló en vez de un único job rojo.
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Configurar acceso a libra-ui
+        env:
+          LIBRA_UI_DEPLOY_KEY: ${{ secrets.LIBRA_UI_DEPLOY_KEY }}
+        working-directory: .
+        run: |
+          if [ -z "$LIBRA_UI_DEPLOY_KEY" ]; then
+            echo "::error::Falta el secret LIBRA_UI_DEPLOY_KEY en este repositorio."
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          printf '%s\n' "$LIBRA_UI_DEPLOY_KEY" > ~/.ssh/id_libra_ui
+          chmod 600 ~/.ssh/id_libra_ui
+          printf 'Host github-libra-ui\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/id_libra_ui\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+          git config --global url."git@github-libra-ui:marianocappucci/libra-ui".insteadOf "https://github.com/marianocappucci/libra-ui"
+          saludo=$(ssh -o StrictHostKeyChecking=yes -T git@github-libra-ui 2>&1 || true)
+          echo "libra-ui -> $saludo"
+          case "$saludo" in
+            *"marianocappucci/libra-ui"*) ;;
+            *) echo "::error::La deploy key no resuelve a marianocappucci/libra-ui."; exit 1 ;;
+          esac
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # El pin de libra-ui se verifica ACÁ y no sólo en local: un `npm install`
+      # a secas no re-resuelve un pin git, y el build pasa en verde contra la
+      # versión anterior (regla del 2026-07-30). `npm ci` respeta el lock, así
+      # que lo que hay que confirmar es que el lock apunte a donde dice el
+      # package.json.
+      #
+      # Se desreferencia el tag con `^{commit}`: los tags de esta familia son
+      # ANOTADOS, así que `rev-parse vX.Y.Z` devuelve el SHA del objeto tag y
+      # nunca coincidiría con el `resolved` del lock, que guarda el commit.
+      - name: Verificar que el pin de libra-ui es el que dice package.json
+        run: |
+          TAG=$(node -p "require('./package.json').dependencies['libra-ui'].split('#')[1]")
+          RESUELTO=$(node -p "require('./package-lock.json').packages['node_modules/libra-ui'].resolved")
+          INSTALADO=$(node -p "require('./node_modules/libra-ui/package.json').version")
+          ESPERADO=$(git ls-remote https://github.com/marianocappucci/libra-ui.git "refs/tags/$TAG^{}" | cut -f1)
+          echo "package.json: $TAG"
+          echo "instalado:    $INSTALADO"
+          echo "lock:         $RESUELTO"
+          echo "commit real:  $ESPERADO"
+          case "$RESUELTO" in
+            *"$ESPERADO"*) echo "OK: el lock apunta al commit de $TAG" ;;
+            *) echo "::error::El lock no apunta al commit de $TAG."; exit 1 ;;
+          esac
+
+      - name: Lint
+        run: npm run lint
+
+      # El build de producción (`tsc -b && vite build`) es exactamente lo que
+      # corre el Dockerfile en el deploy. Sin este paso, un error de tipos en
+      # una pantalla sin tests no aparecería hasta construir la imagen — o sea,
+      # durante el deploy y no en el CI.
+      #
+      # 🔴 Se borra el `tsbuildinfo` primero: `tsc -b` es incremental y un
+      # checkout limpio no lo tiene, pero un caché de Actions sí podría — y
+      # entonces el build pasaría en verde sin haber chequeado nada.
+      - name: Build de producción
+        run: |
+          rm -f tsconfig.tsbuildinfo tsconfig.*.tsbuildinfo
+          npm run build
+          # `npm run build` puede salir con 0 sin escribir nada. Se confirma que
+          # el artefacto existe, no que el comando no falló.
+          test -f dist/index.html || { echo "::error::El build no produjo dist/index.html"; exit 1; }
+
+      - name: Tests con cobertura
+        run: npm run test:coverage

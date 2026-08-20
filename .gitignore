@@ -1,0 +1,29 @@
+# Config local de herramientas: puede contener secretos. Ver el incidente del
+# 2026-07-15 (un settings.local.json de Claude Code con un token de GitHub y una
+# contraseña de cPanel en texto plano).
+.claude/
+.vscode/
+.idea/
+
+# Entornos y artefactos
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Secretos y composes de instancia
+.env
+.env.*
+!.env.example
+docker-compose.yml
+*.pem
+*.key
+
+.DS_Store

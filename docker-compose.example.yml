@@ -1,0 +1,92 @@
+# Plantilla del despliegue de un panel. Copiar a `docker-compose.yml` en el
+# directorio del cliente y completar el `.env` de al lado.
+#
+# 🔴 **Dos redes, y la separación importa.**
+#
+# - `datos` es privada y sólo la comparten el panel y SU PostgreSQL. El sidecar
+#   no publica puertos y no cuelga de la red común: nada más en el servidor
+#   puede llegarle.
+# - `stack_stack-net` es la red de control donde viven los contenedores de los
+#   productos. Es por donde el panel les habla, resolviéndolos por nombre de
+#   contenedor — así el tráfico de este panel **nunca sale a internet**, ni
+#   siquiera para consultar una sucursal del mismo servidor.
+#
+# El día que una sucursal viva en otro servidor, su `url_base` es una URL
+# pública con TLS y el resto no cambia: la credencial de panel viaja igual.
+
+services:
+  panel:
+    image: libra-panel:latest
+    container_name: ${PANEL_SLUG}-panel
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # `:?` y no un default: si falta, el contenedor no arranca en vez de
+      # levantar con un valor de ejemplo. Un `SECRET_KEY` con default legible
+      # en un repo es una cookie de sesión forjable — el mismo defecto que
+      # todavía arrastra el compose versionado de Contalibra.
+      SECRET_KEY: ${SECRET_KEY:?falta SECRET_KEY}
+      # De acá se deriva además la clave con la que se cifran las credenciales
+      # de cada sucursal. Rotarlo obliga a volver a cargarlas todas.
+      LIBRA_PANEL_DATABASE_URL: postgresql://panel:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}@${PANEL_SLUG}-panel-postgres:5432/panel
+      LIBRA_PANEL_ADMIN_USERNAME: ${LIBRA_PANEL_ADMIN_USERNAME:-admin}
+      # Fail-closed: sin esto la app no levanta. Sólo se usa la primera vez,
+      # cuando la tabla `usuarios` está vacía.
+      LIBRA_PANEL_ADMIN_PASSWORD: ${LIBRA_PANEL_ADMIN_PASSWORD:?falta LIBRA_PANEL_ADMIN_PASSWORD}
+      PANEL_NAME: ${PANEL_NAME:-Panel}
+      LIBRA_PANEL_RESET_URL_BASE: https://${PANEL_DOMAIN}/reset-password
+      # Corto a propósito: una sucursal colgada no puede dejar al dueño
+      # mirando un spinner.
+      TIMEOUT_SUCURSAL: ${TIMEOUT_SUCURSAL:-6}
+      TZ: America/Argentina/Buenos_Aires
+    networks:
+      - datos
+      - stack_stack-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Contra `/health`, que es una ruta real de la app. Contra una ruta
+      # cualquiera el catch-all de la SPA devolvería 200 con HTML y el
+      # healthcheck diría "sano" con la API muerta.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  postgres:
+    # `postgres:16`, la misma imagen que usa la suite. El collation viene de la
+    # imagen y `alpine` ordena por bytes: mezclarlas hace que dev y producción
+    # ordenen distinto.
+    image: postgres:16
+    container_name: ${PANEL_SLUG}-panel-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: panel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
+      POSTGRES_DB: panel
+      # Sin esto los DEFAULT de tabla que calcula el servidor salen en UTC
+      # mientras los de Python salen en local: media tabla corrida tres horas.
+      TZ: America/Argentina/Buenos_Aires
+    volumes:
+      - panel-datos:/var/lib/postgresql/data
+    networks:
+      - datos
+    healthcheck:
+      # `-h 127.0.0.1` y no el socket: durante el init postgres levanta un
+      # servidor temporal que sólo escucha en el socket local, así que un
+      # `pg_isready` sin `-h` dice "listo" mientras la base todavía se crea.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U panel -d panel"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  panel-datos:
+
+networks:
+  datos:
+    name: ${PANEL_SLUG}-panel-datos
+  stack_stack-net:
+    external: true
