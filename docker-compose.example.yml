@@ -49,7 +49,17 @@ services:
       # Contra `/health`, que es una ruta real de la app. Contra una ruta
       # cualquiera el catch-all de la SPA devolvería 200 con HTML y el
       # healthcheck diría "sano" con la API muerta.
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status==200 else 1)\""]
+      #
+      # 🔴 **Ese comentario ya estaba, y el chequeo caía igual en la trampa que
+      # describe.** Miraba `.status == 200`, que es exactamente lo que la SPA
+      # devuelve: apuntado a una ruta inventada daba **exit 0**. Medido el
+      # 2026-08-25 dentro de `padel-panel` — la ruta inventada contesta
+      # `200 text/html`. Acertar el nombre de la ruta no alcanza si el chequeo
+      # no puede distinguir la respuesta real del catch-all.
+      #
+      # Ahora mira el CUERPO: `json.load` sobre el `index.html` revienta, que es
+      # lo que se busca. Misma forma que el resto de la familia.
+      test: ["CMD", "python", "-c", "import json,urllib.request; assert isinstance(json.load(urllib.request.urlopen('http://localhost:8000/health', timeout=5)), dict)"]
       interval: 30s
       timeout: 10s
       retries: 3
