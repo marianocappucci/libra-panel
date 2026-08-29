@@ -45,6 +45,29 @@ from .settings import Settings, cargar_settings
 _DEV_SECRET = "libra-panel-dev-secret-no-usar-en-produccion"
 
 
+def _agregar_participacion_si_falta(engine) -> None:
+    """`usuario_sucursales.participacion`, sobre un panel que ya estaba desplegado.
+
+    Idempotente y sin Alembic: se pregunta por la columna y se agrega si no
+    está. Las filas que ya existían quedan en `0`, que es lo correcto ---la
+    participación no es lo que da acceso, así que un socio asignado sigue viendo
+    sus sucursales mientras el porcentaje se completa---.
+
+    El `information_schema` es estándar y anda igual en PostgreSQL y SQLite
+    moderno; la suite corre contra los dos.
+    """
+    from sqlalchemy import inspect, text
+
+    columnas = {c["name"] for c in inspect(engine).get_columns("usuario_sucursales")}
+    if "participacion" in columnas:
+        return
+    with engine.begin() as conexion:
+        conexion.execute(text(
+            "ALTER TABLE usuario_sucursales "
+            "ADD COLUMN participacion NUMERIC(5,2) NOT NULL DEFAULT 0"
+        ))
+
+
 def create_app(
     settings: Settings | None = None,
     frontend_dist: str | None = None,
@@ -63,6 +86,16 @@ def create_app(
     # de libraauth, asi que sacarlo las haria desaparecer del `create_all` sin
     # ningun error a la vista.
     AuthBase.metadata.create_all(db.get_engine())
+    # 🔴 **`create_all` NO agrega columnas a una tabla que ya existe.** Sólo crea
+    # las que faltan enteras. Un panel ya desplegado se queda sin
+    # `usuario_sucursales.participacion` y la pantalla revienta al leerla ---no
+    # al arrancar, que es peor: el error aparece cuando alguien abre la sección.
+    #
+    # Este producto no tiene Alembic, así que el ALTER va acá, idempotente. Es
+    # exactamente el defecto que se midió el 2026-08-29 en
+    # `movimientos_stock.deposito_id` de LibraCore, donde el relleno estaba
+    # anidado dentro de un `if` que nunca se cumple en una instancia con datos.
+    _agregar_participacion_si_falta(db.get_engine())
     sessions = db.get_session_factory()
 
     users = UserRepository(sessions, roles=ROLES)
