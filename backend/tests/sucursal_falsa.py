@@ -17,7 +17,7 @@ que el cliente del panel no se conforma con el codigo de estado.
 """
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from libraauth.session_auth import json_api_require_panel_o_admin
+from libraauth.session_auth import json_api_require_panel_o_admin, token_de_panel_valido
 from libracore.resumen_router import build_resumen_router
 
 HTML_DE_LA_SPA = "<!doctype html>\n<html lang=\"es\"><head><title>Sucursal</title></head></html>"
@@ -109,3 +109,72 @@ def _parchear_nucleo(monkeypatch, datos: dict) -> None:
         "libracore.resumen_router.get_resumen_core",
         lambda desde, hasta: datos,
     )
+
+
+def crear_sucursal_de_empleados(
+    *, ya_existen: tuple[str, ...] = (), ruta: str = "/api/usuarios",
+    con_spa: bool = True, recibidas: list | None = None,
+):
+    """Una sucursal que expone su router de usuarios, con el guard real.
+
+    🔑 **El guard es `token_de_panel_valido` de libraauth, no una imitacion.**
+    Es la pieza que decide si el panel entra: lee `LIBRA_PANEL_TOKEN` del
+    entorno y lo compara con el header `X-Panel-Auth` en tiempo constante. Si
+    el panel manda el header equivocado, o lo manda vacio, esto lo rechaza por
+    el mismo motivo por el que lo rechazaria una sucursal de verdad.
+
+    ⚠️ **Lo que NO es real es el endpoint.** El router de usuarios es de cada
+    producto ---no de libraauth--- y no es una dependencia de este repo, asi
+    que su forma esta reproducida a mano: 201 con el usuario, 409 si el
+    username ya esta. Que ESE contrato sea el que los productos cumplen esta
+    probado del otro lado, en `tests/test_usuarios.py` de LibraClub, contra el
+    router de verdad. Aca se prueba lo que es del panel: que mande la
+    credencial correcta a la ruta correcta y que lea bien lo que le vuelve.
+
+    El catch-all es `@app.get` y no `@app.api_route`, que es como lo montan los
+    **ocho** productos ---medido el 2026-08-29---. Por eso un `POST` a una ruta
+    que no existe cae en 405 y no en el HTML de la SPA. Ponerlo aceptando POST
+    para "cubrir" ese caso seria inventarle a la suite un producto que no
+    existe.
+    """
+    app = FastAPI()
+    existentes = set(ya_existen)
+    registro = recibidas if recibidas is not None else []
+    app.state.recibidas = registro
+
+    @app.post(ruta, status_code=201)
+    def alta(datos: dict, request: Request):
+        if not token_de_panel_valido(request):
+            raise HTTPException(401, "credencial de panel invalida")
+        registro.append(datos)
+        if datos.get("username") in existentes:
+            raise HTTPException(409, "Ya existe un usuario con ese nombre.")
+        existentes.add(datos.get("username"))
+        return {
+            "id": len(registro), "username": datos.get("username"),
+            "name": datos.get("name"), "role": datos.get("role"), "activo": True,
+        }
+
+    if con_spa:
+        @app.get("/{ruta_pedida:path}", include_in_schema=False)
+        def spa(ruta_pedida: str):
+            return HTMLResponse(HTML_DE_LA_SPA)
+
+    return app
+
+
+def crear_sucursal_que_contesta_al_alta(cuerpo, *, status: int = 200):
+    """Contesta cualquier cosa en `POST /api/usuarios`, sin guard.
+
+    Para las formas que el router de arriba no puede producir justamente
+    porque esta bien: un 2xx cuyo cuerpo no es un usuario.
+    """
+    app = FastAPI()
+
+    @app.post("/api/usuarios", status_code=status)
+    def alta():
+        if isinstance(cuerpo, str):
+            return HTMLResponse(cuerpo, status_code=status)
+        return cuerpo
+
+    return app
