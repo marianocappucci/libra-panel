@@ -71,6 +71,25 @@ class Sucursal(Base):
     # darselo a un cliente le abriria las instancias de los demas.
     credencial_cifrada: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
+    #: Donde vive el router de usuarios de ESTA sucursal, para aprovisionar
+    #: empleados.
+    #:
+    #: 🔴 **No es la misma en todos los productos, y por eso es un campo.**
+    #: Medido el 2026-08-29: `/api/usuarios` en LibraClub, LibraCargo,
+    #: LibraDesk, Contalibra y Restolibra; **`/users`** en VentaLibra, MedLibra
+    #: y Gestiolibra. El router de usuarios no es de libraauth ---cada producto
+    #: tiene el suyo--- asi que no hay una convencion que asumir. Es la misma
+    #: razon por la que `libra-backoffice` lleva su `USERS_PATH` configurable.
+    #:
+    #: El default es el de la mayoria; una sucursal de los otros tres se corrige
+    #: en el alta. Adivinarlo probando las dos rutas seria peor: los productos
+    #: sirven una SPA con fallback, asi que una ruta que no existe puede
+    #: contestar 200 con HTML en vez de 404.
+    ruta_de_usuarios: Mapped[str] = mapped_column(
+        String(200), nullable=False, default="/api/usuarios",
+        server_default="/api/usuarios",
+    )
+
     #: Baja logica. Una sucursal desactivada no se consulta y no cuenta para el
     #: "N de M": el dueño cerro ese local, no es que no conteste.
     activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

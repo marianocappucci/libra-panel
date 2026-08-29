@@ -36,7 +36,7 @@ from .cliente_sucursal import ClienteSucursal
 # abajo las cree. Sin el, las tablas no existen y no falla nada al arrancar.
 from .models import ROLES
 from .repositorio import RegistroDeSucursales
-from .routers import resumen, sucursales, usuarios
+from .routers import empleados, resumen, sucursales, usuarios
 from .settings import Settings, cargar_settings
 
 # Fallback de desarrollo para el `SECRET_KEY` de la cookie. `_resolve_secret_key`
@@ -68,6 +68,26 @@ def _agregar_participacion_si_falta(engine) -> None:
         ))
 
 
+def _agregar_ruta_de_usuarios_si_falta(engine) -> None:
+    """`sucursales.ruta_de_usuarios`, sobre un panel que ya estaba desplegado.
+
+    Mismo motivo que `_agregar_participacion_si_falta`: `create_all` no agrega
+    columnas a una tabla que ya existe. Las sucursales que ya estaban quedan con
+    el default ---`/api/usuarios`, que es el de cinco de los ocho productos---
+    y las de los otros tres se corrigen desde la pantalla.
+    """
+    from sqlalchemy import inspect, text
+
+    columnas = {c["name"] for c in inspect(engine).get_columns("sucursales")}
+    if "ruta_de_usuarios" in columnas:
+        return
+    with engine.begin() as conexion:
+        conexion.execute(text(
+            "ALTER TABLE sucursales ADD COLUMN ruta_de_usuarios "
+            "VARCHAR(200) NOT NULL DEFAULT '/api/usuarios'"
+        ))
+
+
 def create_app(
     settings: Settings | None = None,
     frontend_dist: str | None = None,
@@ -96,6 +116,7 @@ def create_app(
     # `movimientos_stock.deposito_id` de LibraCore, donde el relleno estaba
     # anidado dentro de un `if` que nunca se cumple en una instancia con datos.
     _agregar_participacion_si_falta(db.get_engine())
+    _agregar_ruta_de_usuarios_si_falta(db.get_engine())
     sessions = db.get_session_factory()
 
     users = UserRepository(sessions, roles=ROLES)
@@ -167,6 +188,7 @@ def create_app(
     app.include_router(sucursales.router)
     app.include_router(sucursales.mis_router)
     app.include_router(usuarios.router)
+    app.include_router(empleados.router)
 
     _montar_frontend(app, frontend_dist)
     return app

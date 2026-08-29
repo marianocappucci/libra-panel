@@ -31,7 +31,7 @@ const { Sucursales } = await import('../pages/Sucursales')
 const UNA: Sucursal = {
   slug: 'c1', nombre: 'Complejo Uno', url_base: 'http://c1:8000',
   cuit: '30-11111111-9', razon_social: 'Pádel SA', activa: true,
-  tiene_credencial: true, usuario_ids: [],
+  tiene_credencial: true, ruta_de_usuarios: '/api/usuarios', usuario_ids: [],
 }
 
 const USUARIOS: Usuario[] = [

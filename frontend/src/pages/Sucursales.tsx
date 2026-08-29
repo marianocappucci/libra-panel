@@ -20,7 +20,7 @@ import { ApiError, panel, type PruebaSucursal, type Sucursal, type Usuario } fro
 
 const VACIA = {
   slug: '', nombre: '', url_base: '', cuit: '', razon_social: '',
-  credencial: '', activa: true,
+  credencial: '', ruta_de_usuarios: '/api/usuarios', activa: true,
 }
 
 function describir(err: unknown): string {
@@ -305,6 +305,19 @@ export function Sucursales() {
                 {editando === 'nueva'
                   ? 'El LIBRA_PANEL_TOKEN de esa sucursal. Se guarda cifrada y no vuelve a mostrarse.'
                   : 'Vacío = dejar la que ya tiene. Escribir una nueva la reemplaza.'}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ruta">Ruta de usuarios</Label>
+              <Input
+                id="ruta" value={form.ruta_de_usuarios} placeholder="/api/usuarios"
+                onChange={(e) => setForm({ ...form, ruta_de_usuarios: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Dónde expone esta sucursal su ABM de usuarios, para dar de alta
+                empleados. <code>/api/usuarios</code> en LibraClub, LibraCargo,
+                LibraDesk, Contalibra y Restolibra; <code>/users</code> en
+                VentaLibra, MedLibra y Gestiolibra.
               </p>
             </div>
             <label className="flex items-center gap-2 text-sm">

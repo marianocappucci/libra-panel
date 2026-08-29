@@ -5,6 +5,7 @@ import { esAdmin, useAuth } from './auth'
 import { Layout } from './components/Layout'
 import { Login } from './pages/Login'
 import { OlvideMiPassword, ResetearPassword } from './pages/Password'
+import { Empleados } from './pages/Empleados'
 import { Panel } from './pages/Panel'
 import { Sucursales } from './pages/Sucursales'
 import { Usuarios } from './pages/Usuarios'
@@ -41,6 +42,10 @@ export default function App() {
       <Route
         path="/usuarios"
         element={<RutaProtegida soloAdmin><Usuarios /></RutaProtegida>}
+      />
+      <Route
+        path="/empleados"
+        element={<RutaProtegida soloAdmin><Empleados /></RutaProtegida>}
       />
       <Route path="*" element={<Navigate to="/panel" replace />} />
     </Routes>

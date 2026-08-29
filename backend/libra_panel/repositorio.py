@@ -35,6 +35,10 @@ class SucursalParaConsultar:
     cuit: str
     razon_social: str
     credencial: str
+    #: Donde vive el router de usuarios de esta sucursal. Viaja aca y no se
+    #: asume una constante: es `/api/usuarios` en cinco productos y `/users` en
+    #: tres. Ver el comentario de `Sucursal.ruta_de_usuarios`.
+    ruta_de_usuarios: str = "/api/usuarios"
     #: Por que no hay credencial utilizable, si no la hay. Va a parar al
     #: detalle de la fila "sin respuesta", que es donde se puede leer.
     problema: str = ""
@@ -71,6 +75,30 @@ class CredencialIlegible(Exception):
     """
 
 
+#: Cuando la ruta viene vacia. Es la de cinco de los ocho productos; los otros
+#: tres ---VentaLibra, MedLibra y Gestiolibra--- usan `/users` y se corrigen en
+#: el alta. Ver el comentario de `Sucursal.ruta_de_usuarios`.
+RUTA_DE_USUARIOS_POR_DEFECTO = "/api/usuarios"
+
+
+def _ruta_normalizada(ruta: str | None) -> str:
+    """Con la barra adelante y sin la de atras.
+
+    ⚠️ **No es lo que arma la URL, aunque lo parezca.** Hasta el 2026-08-29
+    esto decia que sin la barra `http://sede:8000` + `users` daba
+    `http://sede:8000users`. Es falso: `ClienteSucursal.crear_usuario` arma la
+    URL como `f"{url_base}/{ruta.strip(chr(47))}"`, con su propia barra, asi
+    que `users` y `/users/` llegan igual. Lo dejo una mutacion que sobrevivio.
+
+    🔑 **Lo que hace es que haya UNA forma guardada.** `users`, `/users` y
+    `/users/` son la misma ruta y sin esto se guardan como tres textos
+    distintos: la pantalla muestra lo que se tipeo, comparar dos sucursales da
+    distinto y el dia que algo agrupe por este campo agrupa mal.
+    """
+    limpia = (ruta or "").strip().strip("/")
+    return f"/{limpia}" if limpia else RUTA_DE_USUARIOS_POR_DEFECTO
+
+
 def _a_dict(s: Sucursal) -> dict:
     return {
         "slug": s.slug,
@@ -79,6 +107,7 @@ def _a_dict(s: Sucursal) -> dict:
         "cuit": s.cuit or "",
         "razon_social": s.razon_social or "",
         "activa": bool(s.activa),
+        "ruta_de_usuarios": s.ruta_de_usuarios or "/api/usuarios",
         "tiene_credencial": bool(s.credencial_cifrada),
     }
 
@@ -174,6 +203,7 @@ class RegistroDeSucursales:
                     url_base=s["url_base"],
                     cuit=s["cuit"],
                     razon_social=s["razon_social"],
+                    ruta_de_usuarios=s["ruta_de_usuarios"],
                     credencial=credencial,
                     problema=problema,
                 )
@@ -197,6 +227,7 @@ class RegistroDeSucursales:
     def crear(
         self, *, slug: str, nombre: str, url_base: str, cuit: str = "",
         razon_social: str = "", credencial: str = "", activa: bool = True,
+        ruta_de_usuarios: str = "/api/usuarios",
     ) -> dict:
         with self.session_factory() as session:
             s = Sucursal(
@@ -206,6 +237,9 @@ class RegistroDeSucursales:
                 cuit=(cuit or "").strip(),
                 razon_social=(razon_social or "").strip(),
                 credencial_cifrada=_cifrar_o_vacio(credencial),
+                # Una sola forma guardada para la misma ruta: ver el
+                # docstring de `_ruta_normalizada`.
+                ruta_de_usuarios=_ruta_normalizada(ruta_de_usuarios),
                 activa=activa,
             )
             session.add(s)
@@ -223,6 +257,7 @@ class RegistroDeSucursales:
         self, slug: str, *, nombre: str | None = None, url_base: str | None = None,
         cuit: str | None = None, razon_social: str | None = None,
         credencial: str | None = None, activa: bool | None = None,
+        ruta_de_usuarios: str | None = None,
     ) -> dict:
         """`credencial=None` **deja la guardada como esta**, no la borra.
 
@@ -244,6 +279,8 @@ class RegistroDeSucursales:
                 s.razon_social = razon_social.strip()
             if credencial is not None:
                 s.credencial_cifrada = _cifrar_o_vacio(credencial)
+            if ruta_de_usuarios is not None:
+                s.ruta_de_usuarios = _ruta_normalizada(ruta_de_usuarios)
             if activa is not None:
                 s.activa = activa
             session.commit()
