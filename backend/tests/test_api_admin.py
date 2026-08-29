@@ -305,3 +305,133 @@ def test_tocar_un_usuario_que_no_existe_da_404(admin):
         "name": "X", "role": "socio", "active": True,
     }).status_code == 404
     assert admin.put("/api/usuarios/99999/password", json={"password": "clave-larga"}).status_code == 404
+
+
+# -- La participacion del socio ---------------------------------------------
+#
+# Es un DATO, no un calculo: el socio ve los numeros completos de las sucursales
+# donde participa, y el porcentaje se muestra al lado. Decidido el 2026-08-29.
+
+
+def _alta(admin, slug="c1"):
+    r = admin.post("/api/sucursales", json={
+        "slug": slug, "nombre": slug.title(), "url_base": f"http://{slug}:8000",
+        "cuit": "30-71234567-9", "razon_social": "Padel SA", "credencial": "secreta",
+    })
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def _socio(admin, nombre="dueno2"):
+    r = admin.post("/api/usuarios", json={
+        "username": nombre, "name": nombre.title(),
+        "password": f"clave-{nombre}", "role": "socio",
+    })
+    assert r.status_code == 201, r.text
+    return int(r.json()["id"])
+
+
+def test_se_carga_la_participacion_y_viaja_con_el_listado(admin):
+    """La pantalla la muestra en la misma fila que la asignacion, asi que tiene
+    que venir con el listado y no en una llamada por sucursal."""
+    _alta(admin)
+    uid = _socio(admin)
+    assert admin.put("/api/sucursales/c1/usuarios", json={"usuario_ids": [uid]}).status_code == 200
+
+    r = admin.put("/api/sucursales/c1/participacion",
+                  json={"usuario_id": uid, "participacion": "33.33"})
+    assert r.status_code == 200, r.text
+    assert r.json()["participacion"] == 33.33
+
+    fila = next(s for s in admin.get("/api/sucursales").json() if s["slug"] == "c1")
+    assert fila["participaciones"] == {str(uid): 33.33}
+
+
+def test_un_porcentaje_fuera_de_rango_lo_rechaza_el_esquema(admin):
+    _alta(admin)
+    uid = _socio(admin)
+    admin.put("/api/sucursales/c1/usuarios", json={"usuario_ids": [uid]})
+    for malo in (101, -1):
+        r = admin.put("/api/sucursales/c1/participacion",
+                      json={"usuario_id": uid, "participacion": malo})
+        assert r.status_code == 422, f"{malo} entro: {r.text}"
+    # El control: uno valido si entra.
+    assert admin.put("/api/sucursales/c1/participacion",
+                     json={"usuario_id": uid, "participacion": 50}).status_code == 200
+
+
+def test_a_quien_no_tiene_la_sucursal_asignada_da_409_y_no_404(admin):
+    """La sucursal existe y el usuario tambien; lo que falta es la asignacion.
+    Un 404 mandaria a mirar si el slug esta bien escrito."""
+    _alta(admin)
+    uid = _socio(admin)
+    r = admin.put("/api/sucursales/c1/participacion",
+                  json={"usuario_id": uid, "participacion": 50})
+    assert r.status_code == 409, r.text
+    # El control: asignandolo primero, entra.
+    admin.put("/api/sucursales/c1/usuarios", json={"usuario_ids": [uid]})
+    assert admin.put("/api/sucursales/c1/participacion",
+                     json={"usuario_id": uid, "participacion": 50}).status_code == 200
+
+
+def test_sobre_una_sucursal_que_no_existe_da_404(admin):
+    uid = _socio(admin)
+    assert admin.put("/api/sucursales/no-existe/participacion",
+                     json={"usuario_id": uid, "participacion": 50}).status_code == 404
+
+
+def test_UN_SOCIO_NO_PUEDE_CARGAR_PARTICIPACIONES(socio):
+    """🔴 Es el ABM del registro: lo administra el admin del panel.
+
+    Un socio que pudiera escribir su propio porcentaje estaria editando el
+    registro que dice quien ve que.
+    """
+    r = socio.put("/api/sucursales/c1/participacion",
+                  json={"usuario_id": 1, "participacion": 50})
+    assert r.status_code == 403, r.text
+
+
+def test_EL_SOCIO_SIGUE_VIENDO_LOS_NUMEROS_COMPLETOS(crear_app):
+    """🔴 La lectura elegida: participacion como FILTRO, no como proporcion.
+
+    Se compara el resumen que ve el socio con 100% y con 1%: tiene que ser el
+    MISMO numero. Si algun dia difiere, alguien implemento la otra lectura ---la
+    de "su parte"--- sin volver a decidirla.
+
+    Se pega en `/api/resumen`, que es donde el socio ve la plata, con el cliente
+    doble que usa `test_resumen.py`: lo que se mide es lo que llega a la
+    pantalla, no lo que devuelve el repositorio.
+    """
+    from .conftest import hacer_cliente
+    from .test_resumen import NUCLEO, ClienteFalso
+
+    doble = ClienteFalso({"http://c1:8000": {"nucleo": dict(NUCLEO)}})
+    app = crear_app(cliente_sucursal=doble)
+
+    admin = hacer_cliente(app)
+    import os
+    assert admin.post("/auth/login", json={
+        "username": "admin", "password": os.environ["LIBRA_PANEL_ADMIN_PASSWORD"],
+    }).status_code == 200
+
+    _alta(admin)
+    uid = _socio(admin, "duenoc")
+    admin.put("/api/sucursales/c1/usuarios", json={"usuario_ids": [uid]})
+
+    cliente = hacer_cliente(app)
+    assert cliente.post(
+        "/auth/login", json={"username": "duenoc", "password": "clave-duenoc"}
+    ).status_code == 200
+
+    admin.put("/api/sucursales/c1/participacion",
+              json={"usuario_id": uid, "participacion": 100})
+    con_100 = cliente.get("/api/resumen").json()
+    admin.put("/api/sucursales/c1/participacion",
+              json={"usuario_id": uid, "participacion": 1})
+    con_1 = cliente.get("/api/resumen").json()
+
+    # Control de que el test mide algo: el resumen trae plata, no viene vacio.
+    assert con_100["consolidado"]["nucleo"]["datos"]["facturado"] == 100.0, con_100
+    assert con_100 == con_1, (
+        "la participacion esta cambiando lo que ve el socio: eso es la otra lectura"
+    )

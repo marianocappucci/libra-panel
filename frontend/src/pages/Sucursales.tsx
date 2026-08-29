@@ -20,7 +20,7 @@ import { ApiError, panel, type PruebaSucursal, type Sucursal, type Usuario } fro
 
 const VACIA = {
   slug: '', nombre: '', url_base: '', cuit: '', razon_social: '',
-  credencial: '', activa: true,
+  credencial: '', ruta_de_usuarios: '/api/usuarios', activa: true,
 }
 
 function describir(err: unknown): string {
@@ -98,6 +98,21 @@ export function Sucursales() {
     }
   }
 
+  async function guardarParticipacion(s: Sucursal, usuarioId: number, valor: string) {
+    const numero = Number(valor)
+    // Un campo vacío o con letras no se manda: el backend lo rechazaría con un
+    // 422 y el operador vería un error por haber borrado el contenido para
+    // reescribirlo.
+    if (valor.trim() === '' || Number.isNaN(numero)) return
+    if (numero === (s.participaciones?.[String(usuarioId)] ?? 0)) return
+    try {
+      await panel.participacion(s.slug, usuarioId, numero)
+      await cargar()
+    } catch (err) {
+      setError(describir(err))
+    }
+  }
+
   async function alternarUsuario(s: Sucursal, usuarioId: number) {
     const actuales = s.usuario_ids ?? []
     const nuevos = actuales.includes(usuarioId)
@@ -171,16 +186,57 @@ export function Sucursales() {
 
               <div className="flex flex-wrap items-center gap-4">
                 <span className="text-xs text-muted-foreground">La ven:</span>
-                {usuarios.map((u) => (
-                  <label key={u.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={(s.usuario_ids ?? []).includes(Number(u.id))}
-                      onCheckedChange={() => void alternarUsuario(s, Number(u.id))}
-                    />
-                    {u.name} <span className="text-muted-foreground">({u.role})</span>
-                  </label>
-                ))}
+                {usuarios.map((u) => {
+                  const asignado = (s.usuario_ids ?? []).includes(Number(u.id))
+                  return (
+                    <label key={u.id} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={asignado}
+                        onCheckedChange={() => void alternarUsuario(s, Number(u.id))}
+                      />
+                      {u.name} <span className="text-muted-foreground">({u.role})</span>
+                      {/* 🔑 El porcentaje sólo sobre los asignados: la
+                          participación **no es lo que da acceso** ---eso lo da
+                          la asignación--- así que ofrecerlo sobre alguien que no
+                          ve la sucursal sugeriría que cargarlo se la da. El
+                          backend además lo rechaza con un 409. */}
+                      {asignado && (
+                        <span className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step="0.01"
+                            aria-label={`Participación de ${u.name} en ${s.nombre}`}
+                            className="h-7 w-20"
+                            defaultValue={s.participaciones?.[String(u.id)] ?? 0}
+                            onBlur={(e) =>
+                              void guardarParticipacion(s, Number(u.id), e.target.value)
+                            }
+                          />
+                          <span className="text-muted-foreground">%</span>
+                        </span>
+                      )}
+                    </label>
+                  )
+                })}
               </div>
+              {/* ⚠️ **Se avisa, no se rechaza.** Las participaciones se cargan
+                  de a una, así que un estado intermedio que no suma 100 es
+                  normal mientras se completa; bloquear ahí obligaría a cargar
+                  todo de un saque. Lo que no puede pasar es que quede mal y
+                  nadie lo note. */}
+              {(() => {
+                const suma = Object.entries(s.participaciones ?? {})
+                  .filter(([uid]) => (s.usuario_ids ?? []).includes(Number(uid)))
+                  .reduce((t, [, p]) => t + p, 0)
+                if (suma === 0 || Math.abs(suma - 100) < 0.01) return null
+                return (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Las participaciones de esta sucursal suman {suma.toFixed(2)} %, no 100 %.
+                  </p>
+                )
+              })()}
             </CardContent>
           </Card>
         ))}
@@ -249,6 +305,19 @@ export function Sucursales() {
                 {editando === 'nueva'
                   ? 'El LIBRA_PANEL_TOKEN de esa sucursal. Se guarda cifrada y no vuelve a mostrarse.'
                   : 'Vacío = dejar la que ya tiene. Escribir una nueva la reemplaza.'}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ruta">Ruta de usuarios</Label>
+              <Input
+                id="ruta" value={form.ruta_de_usuarios} placeholder="/api/usuarios"
+                onChange={(e) => setForm({ ...form, ruta_de_usuarios: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Dónde expone esta sucursal su ABM de usuarios, para dar de alta
+                empleados. <code>/api/usuarios</code> en LibraClub, LibraCargo,
+                LibraDesk, Contalibra y Restolibra; <code>/users</code> en
+                VentaLibra, MedLibra y Gestiolibra.
               </p>
             </div>
             <label className="flex items-center gap-2 text-sm">

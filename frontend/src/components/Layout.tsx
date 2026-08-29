@@ -4,7 +4,7 @@
 // grupo de sucursales de Contalibra igual que para uno de VentaLibra— y el
 // nombre real llega por `PANEL_NAME` del entorno. Poner un nombre acá
 // obligaría a una imagen por cliente, que es justo lo que este repo evita.
-import { Building2, LayoutDashboard, Users } from 'lucide-react'
+import { Building2, LayoutDashboard, UserPlus, Users } from 'lucide-react'
 import { createLayout } from 'libra-ui/Layout'
 
 import { useAuth } from '../auth'
@@ -27,6 +27,14 @@ export const Layout = createLayout<Usuario>({
     },
     {
       to: '/usuarios', label: 'Usuarios', icon: Users,
+      hideFor: (u) => u.role !== 'admin',
+    },
+    // Los usuarios DE LAS SUCURSALES, que no son los del panel. Van en dos
+    // ítems distintos porque son dos cosas distintas: arriba se administra
+    // quién entra a este panel; acá se dan de alta empleados en los sistemas
+    // de las sedes, que tienen cada uno su propia sesión.
+    {
+      to: '/empleados', label: 'Empleados', icon: UserPlus,
       hideFor: (u) => u.role !== 'admin',
     },
   ],

@@ -8,6 +8,7 @@ seria una forma de filtrarla que ningun `.gitignore` tapa.
 """
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Callable
 
 from libraauth.crypto import ClaveDeCifradoAusente, SecretoIndescifrable, cifrar, descifrar
@@ -34,6 +35,10 @@ class SucursalParaConsultar:
     cuit: str
     razon_social: str
     credencial: str
+    #: Donde vive el router de usuarios de esta sucursal. Viaja aca y no se
+    #: asume una constante: es `/api/usuarios` en cinco productos y `/users` en
+    #: tres. Ver el comentario de `Sucursal.ruta_de_usuarios`.
+    ruta_de_usuarios: str = "/api/usuarios"
     #: Por que no hay credencial utilizable, si no la hay. Va a parar al
     #: detalle de la fila "sin respuesta", que es donde se puede leer.
     problema: str = ""
@@ -47,6 +52,19 @@ class SucursalDesconocida(Exception):
     """No existe una sucursal con ese slug."""
 
 
+class AsignacionDesconocida(Exception):
+    """Ese usuario no tiene asignada esa sucursal.
+
+    Se distingue de `SucursalDesconocida` a proposito: son dos arreglos
+    distintos ---dar de alta la sucursal, o asignarsela al socio--- y un solo
+    mensaje mandaria a mirar el lugar equivocado.
+    """
+
+
+class ParticipacionInvalida(Exception):
+    """Un porcentaje fuera de 0..100."""
+
+
 class CredencialIlegible(Exception):
     """La credencial guardada no se puede descifrar con la clave actual.
 
@@ -57,6 +75,30 @@ class CredencialIlegible(Exception):
     """
 
 
+#: Cuando la ruta viene vacia. Es la de cinco de los ocho productos; los otros
+#: tres ---VentaLibra, MedLibra y Gestiolibra--- usan `/users` y se corrigen en
+#: el alta. Ver el comentario de `Sucursal.ruta_de_usuarios`.
+RUTA_DE_USUARIOS_POR_DEFECTO = "/api/usuarios"
+
+
+def _ruta_normalizada(ruta: str | None) -> str:
+    """Con la barra adelante y sin la de atras.
+
+    ⚠️ **No es lo que arma la URL, aunque lo parezca.** Hasta el 2026-08-29
+    esto decia que sin la barra `http://sede:8000` + `users` daba
+    `http://sede:8000users`. Es falso: `ClienteSucursal.crear_usuario` arma la
+    URL como `f"{url_base}/{ruta.strip(chr(47))}"`, con su propia barra, asi
+    que `users` y `/users/` llegan igual. Lo dejo una mutacion que sobrevivio.
+
+    🔑 **Lo que hace es que haya UNA forma guardada.** `users`, `/users` y
+    `/users/` son la misma ruta y sin esto se guardan como tres textos
+    distintos: la pantalla muestra lo que se tipeo, comparar dos sucursales da
+    distinto y el dia que algo agrupe por este campo agrupa mal.
+    """
+    limpia = (ruta or "").strip().strip("/")
+    return f"/{limpia}" if limpia else RUTA_DE_USUARIOS_POR_DEFECTO
+
+
 def _a_dict(s: Sucursal) -> dict:
     return {
         "slug": s.slug,
@@ -65,6 +107,7 @@ def _a_dict(s: Sucursal) -> dict:
         "cuit": s.cuit or "",
         "razon_social": s.razon_social or "",
         "activa": bool(s.activa),
+        "ruta_de_usuarios": s.ruta_de_usuarios or "/api/usuarios",
         "tiene_credencial": bool(s.credencial_cifrada),
     }
 
@@ -160,6 +203,7 @@ class RegistroDeSucursales:
                     url_base=s["url_base"],
                     cuit=s["cuit"],
                     razon_social=s["razon_social"],
+                    ruta_de_usuarios=s["ruta_de_usuarios"],
                     credencial=credencial,
                     problema=problema,
                 )
@@ -183,6 +227,7 @@ class RegistroDeSucursales:
     def crear(
         self, *, slug: str, nombre: str, url_base: str, cuit: str = "",
         razon_social: str = "", credencial: str = "", activa: bool = True,
+        ruta_de_usuarios: str = "/api/usuarios",
     ) -> dict:
         with self.session_factory() as session:
             s = Sucursal(
@@ -192,6 +237,9 @@ class RegistroDeSucursales:
                 cuit=(cuit or "").strip(),
                 razon_social=(razon_social or "").strip(),
                 credencial_cifrada=_cifrar_o_vacio(credencial),
+                # Una sola forma guardada para la misma ruta: ver el
+                # docstring de `_ruta_normalizada`.
+                ruta_de_usuarios=_ruta_normalizada(ruta_de_usuarios),
                 activa=activa,
             )
             session.add(s)
@@ -209,6 +257,7 @@ class RegistroDeSucursales:
         self, slug: str, *, nombre: str | None = None, url_base: str | None = None,
         cuit: str | None = None, razon_social: str | None = None,
         credencial: str | None = None, activa: bool | None = None,
+        ruta_de_usuarios: str | None = None,
     ) -> dict:
         """`credencial=None` **deja la guardada como esta**, no la borra.
 
@@ -230,6 +279,8 @@ class RegistroDeSucursales:
                 s.razon_social = razon_social.strip()
             if credencial is not None:
                 s.credencial_cifrada = _cifrar_o_vacio(credencial)
+            if ruta_de_usuarios is not None:
+                s.ruta_de_usuarios = _ruta_normalizada(ruta_de_usuarios)
             if activa is not None:
                 s.activa = activa
             session.commit()
@@ -252,13 +303,68 @@ class RegistroDeSucursales:
         quedan = sorted({int(u) for u in usuario_ids})
         with self.session_factory() as session:
             s = self._exigir(session, slug)
+            # 🔴 **La participación de los que SIGUEN se conserva.** Esta función
+            # borra y reinserta, así que sin esto reasignar la membresía ---sacar
+            # a un socio, agregar a otro--- le pondría la participación en cero a
+            # todos los demás. Y en silencio: la pantalla de asignación no
+            # muestra porcentajes, así que nadie vería el momento en que se
+            # perdieron.
+            previas = {
+                f.usuario_id: f.participacion
+                for f in session.execute(
+                    select(UsuarioSucursal).where(UsuarioSucursal.sucursal_id == s.id)
+                ).scalars()
+            }
             session.execute(
                 delete(UsuarioSucursal).where(UsuarioSucursal.sucursal_id == s.id)
             )
             for uid in quedan:
-                session.add(UsuarioSucursal(usuario_id=uid, sucursal_id=s.id))
+                session.add(UsuarioSucursal(
+                    usuario_id=uid, sucursal_id=s.id,
+                    participacion=previas.get(uid, Decimal("0")),
+                ))
             session.commit()
         return quedan
+
+    def fijar_participacion(self, slug: str, usuario_id: int, participacion) -> Decimal:
+        """El porcentaje de un socio en una sucursal. Devuelve el que quedó.
+
+        🔑 **Es un dato informativo y no toca ningún número.** El socio ve la
+        facturación completa de las sucursales donde participa; el porcentaje se
+        muestra al lado. Ver el comentario de la columna.
+
+        Exige que la asignación exista: fijarle participación a alguien que no
+        ve la sucursal sería crear el permiso por la puerta de atrás.
+        """
+        valor = Decimal(str(participacion)).quantize(Decimal("0.01"))
+        if valor < 0 or valor > 100:
+            raise ParticipacionInvalida(
+                f"La participación tiene que estar entre 0 y 100 (llegó {valor})."
+            )
+        with self.session_factory() as session:
+            s = self._exigir(session, slug)
+            fila = session.execute(
+                select(UsuarioSucursal).where(
+                    UsuarioSucursal.sucursal_id == s.id,
+                    UsuarioSucursal.usuario_id == int(usuario_id),
+                )
+            ).scalar_one_or_none()
+            if fila is None:
+                raise AsignacionDesconocida(
+                    f"El usuario {usuario_id} no tiene asignada la sucursal {slug!r}."
+                )
+            fila.participacion = valor
+            session.commit()
+        return valor
+
+    def participaciones_de(self, slug: str) -> dict[int, Decimal]:
+        """`{usuario_id: participacion}` de esa sucursal, para la pantalla."""
+        with self.session_factory() as session:
+            s = self._exigir(session, slug)
+            filas = session.execute(
+                select(UsuarioSucursal).where(UsuarioSucursal.sucursal_id == s.id)
+            ).scalars()
+            return {f.usuario_id: f.participacion for f in filas}
 
     # ── Internos ────────────────────────────────────────────────────────────
 

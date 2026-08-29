@@ -1,17 +1,26 @@
 """El registro de sucursales: ABM y asignacion. **Solo admin.**
 
-El panel es de **solo lectura hacia las sucursales**: no hay un endpoint que le
-escriba nada a ninguna. Lo que se administra aca es el registro propio del
-panel —que sucursal existe, en que URL, con que credencial y quien la ve—, que
-es otra cosa.
+Lo que se administra aca es el registro propio del panel —que sucursal existe,
+en que URL, con que credencial, donde tiene su router de usuarios y quien la
+ve—. **Ninguno de estos endpoints le habla a una sucursal**: escriben en la base
+del panel y nada mas.
+
+⚠️ Hasta el 2026-08-29 esta nota decia que el panel era *"de solo lectura hacia
+las sucursales"*, sin mas. Dejo de ser cierto: `routers/empleados.py` da de
+alta empleados con un `POST` a cada sede. Lo que sigue valiendo es lo de arriba —que
+el ABM del registro no sale a la red—, que es lo que este modulo hace.
 """
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..cliente_sucursal import SucursalSinRespuesta
 from ..deps import requiere_admin, usuario_actual
 from ..fechas import rango_por_defecto
-from ..repositorio import SlugTomado, SucursalDesconocida
+from ..repositorio import (
+    AsignacionDesconocida, ParticipacionInvalida, SlugTomado, SucursalDesconocida,
+)
 
 router = APIRouter(prefix="/api/sucursales", tags=["sucursales"])
 
@@ -27,6 +36,10 @@ class SucursalIn(BaseModel):
     #: La credencial de panel de esta sucursal (su `LIBRA_PANEL_TOKEN`). Entra
     #: por aca y no vuelve a salir nunca: se guarda cifrada.
     credencial: str = ""
+    #: Donde vive el router de usuarios de esta sucursal, para aprovisionar
+    #: empleados. `/api/usuarios` en cinco productos y `/users` en tres —ver
+    #: el comentario de `Sucursal.ruta_de_usuarios`—.
+    ruta_de_usuarios: str = "/api/usuarios"
     activa: bool = True
 
 
@@ -43,6 +56,7 @@ class SucursalPatch(BaseModel):
     cuit: str | None = None
     razon_social: str | None = None
     credencial: str | None = None
+    ruta_de_usuarios: str | None = None
     activa: bool | None = None
 
 
@@ -50,11 +64,31 @@ class AsignacionIn(BaseModel):
     usuario_ids: list[int]
 
 
+class ParticipacionIn(BaseModel):
+    usuario_id: int
+    #: 0..100. El rango lo validan el repositorio **y** la base; acá se declara
+    #: para que un texto o un negativo no lleguen siquiera al servicio.
+    participacion: Decimal = Field(ge=0, le=100)
+
+
 @router.get("", dependencies=[Depends(requiere_admin)])
 def listar(request: Request):
     registro = request.app.state.registro
     return [
-        {**s, "usuario_ids": registro.usuarios_de(s["slug"])}
+        {
+            **s,
+            "usuario_ids": registro.usuarios_de(s["slug"]),
+            # 🔑 Las participaciones viajan con el listado y no en una llamada
+            # aparte: la pantalla las muestra en la misma fila que la asignación,
+            # y pedirlas de a una sería una request por sucursal.
+            #
+            # Las claves salen como texto porque JSON no tiene enteros por clave;
+            # la pantalla las vuelve a leer por el id del usuario.
+            "participaciones": {
+                str(uid): float(p)
+                for uid, p in registro.participaciones_de(s["slug"]).items()
+            },
+        }
         for s in registro.listar()
     ]
 
@@ -105,6 +139,33 @@ def asignar(slug: str, datos: AsignacionIn, request: Request):
         return {"slug": slug, "usuario_ids": registro.asignar(slug, datos.usuario_ids)}
     except SucursalDesconocida:
         raise HTTPException(404, f"No existe la sucursal {slug!r}.") from None
+
+
+@router.put("/{slug}/participacion", dependencies=[Depends(requiere_admin)])
+def participacion(slug: str, datos: ParticipacionIn, request: Request):
+    """El porcentaje de un socio en esta sucursal.
+
+    🔑 **Es un dato informativo: no cambia ningún número.** El socio ve la
+    facturación completa de las sucursales donde participa. Decidido así el
+    2026-08-29 entre las dos lecturas posibles; la otra ---que viera "su
+    parte"--- arrastra decisiones que no son de software.
+
+    Va aparte de `PUT /{slug}/usuarios` a propósito: aquél fija **quién ve**, y
+    es lo que da acceso. Mezclarlos en un payload haría que cargar un porcentaje
+    pudiera revocarle el acceso a otro socio por omisión.
+    """
+    registro = request.app.state.registro
+    try:
+        valor = registro.fijar_participacion(slug, datos.usuario_id, datos.participacion)
+    except SucursalDesconocida:
+        raise HTTPException(404, f"No existe la sucursal {slug!r}.") from None
+    except AsignacionDesconocida as e:
+        # 409 y no 404: la sucursal existe y el usuario tambien; lo que falta es
+        # la asignacion. Un 404 mandaria a mirar si el slug esta bien escrito.
+        raise HTTPException(409, str(e)) from None
+    except ParticipacionInvalida as e:
+        raise HTTPException(422, str(e)) from None
+    return {"slug": slug, "usuario_id": datos.usuario_id, "participacion": float(valor)}
 
 
 @router.post("/{slug}/probar", dependencies=[Depends(requiere_admin)])
