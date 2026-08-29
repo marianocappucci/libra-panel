@@ -8,6 +8,7 @@ seria una forma de filtrarla que ningun `.gitignore` tapa.
 """
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Callable
 
 from libraauth.crypto import ClaveDeCifradoAusente, SecretoIndescifrable, cifrar, descifrar
@@ -45,6 +46,19 @@ class SlugTomado(Exception):
 
 class SucursalDesconocida(Exception):
     """No existe una sucursal con ese slug."""
+
+
+class AsignacionDesconocida(Exception):
+    """Ese usuario no tiene asignada esa sucursal.
+
+    Se distingue de `SucursalDesconocida` a proposito: son dos arreglos
+    distintos ---dar de alta la sucursal, o asignarsela al socio--- y un solo
+    mensaje mandaria a mirar el lugar equivocado.
+    """
+
+
+class ParticipacionInvalida(Exception):
+    """Un porcentaje fuera de 0..100."""
 
 
 class CredencialIlegible(Exception):
@@ -252,13 +266,68 @@ class RegistroDeSucursales:
         quedan = sorted({int(u) for u in usuario_ids})
         with self.session_factory() as session:
             s = self._exigir(session, slug)
+            # 🔴 **La participación de los que SIGUEN se conserva.** Esta función
+            # borra y reinserta, así que sin esto reasignar la membresía ---sacar
+            # a un socio, agregar a otro--- le pondría la participación en cero a
+            # todos los demás. Y en silencio: la pantalla de asignación no
+            # muestra porcentajes, así que nadie vería el momento en que se
+            # perdieron.
+            previas = {
+                f.usuario_id: f.participacion
+                for f in session.execute(
+                    select(UsuarioSucursal).where(UsuarioSucursal.sucursal_id == s.id)
+                ).scalars()
+            }
             session.execute(
                 delete(UsuarioSucursal).where(UsuarioSucursal.sucursal_id == s.id)
             )
             for uid in quedan:
-                session.add(UsuarioSucursal(usuario_id=uid, sucursal_id=s.id))
+                session.add(UsuarioSucursal(
+                    usuario_id=uid, sucursal_id=s.id,
+                    participacion=previas.get(uid, Decimal("0")),
+                ))
             session.commit()
         return quedan
+
+    def fijar_participacion(self, slug: str, usuario_id: int, participacion) -> Decimal:
+        """El porcentaje de un socio en una sucursal. Devuelve el que quedó.
+
+        🔑 **Es un dato informativo y no toca ningún número.** El socio ve la
+        facturación completa de las sucursales donde participa; el porcentaje se
+        muestra al lado. Ver el comentario de la columna.
+
+        Exige que la asignación exista: fijarle participación a alguien que no
+        ve la sucursal sería crear el permiso por la puerta de atrás.
+        """
+        valor = Decimal(str(participacion)).quantize(Decimal("0.01"))
+        if valor < 0 or valor > 100:
+            raise ParticipacionInvalida(
+                f"La participación tiene que estar entre 0 y 100 (llegó {valor})."
+            )
+        with self.session_factory() as session:
+            s = self._exigir(session, slug)
+            fila = session.execute(
+                select(UsuarioSucursal).where(
+                    UsuarioSucursal.sucursal_id == s.id,
+                    UsuarioSucursal.usuario_id == int(usuario_id),
+                )
+            ).scalar_one_or_none()
+            if fila is None:
+                raise AsignacionDesconocida(
+                    f"El usuario {usuario_id} no tiene asignada la sucursal {slug!r}."
+                )
+            fila.participacion = valor
+            session.commit()
+        return valor
+
+    def participaciones_de(self, slug: str) -> dict[int, Decimal]:
+        """`{usuario_id: participacion}` de esa sucursal, para la pantalla."""
+        with self.session_factory() as session:
+            s = self._exigir(session, slug)
+            filas = session.execute(
+                select(UsuarioSucursal).where(UsuarioSucursal.sucursal_id == s.id)
+            ).scalars()
+            return {f.usuario_id: f.participacion for f in filas}
 
     # ── Internos ────────────────────────────────────────────────────────────
 

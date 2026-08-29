@@ -30,6 +30,12 @@ export type Sucursal = {
   tiene_credencial: boolean
   /** Sólo en el listado de admin. */
   usuario_ids?: number[]
+  /** `{ "<usuario_id>": porcentaje }`. Las claves son texto porque JSON no
+   *  tiene enteros por clave.
+   *
+   *  🔑 **Es un dato informativo: no cambia ningún número.** El socio ve la
+   *  facturación completa de las sucursales donde participa. */
+  participaciones?: Record<string, number>
 }
 
 /** Un bloque consolidado, con **de cuántas sucursales salió**.
@@ -110,6 +116,12 @@ export const panel = {
   editarSucursal: (slug: string, datos: Partial<Sucursal> & { credencial?: string }) =>
     api.put<Sucursal>(`/api/sucursales/${slug}`, datos),
   borrarSucursal: (slug: string) => api.del<void>(`/api/sucursales/${slug}`),
+  /** El porcentaje de un socio en una sucursal. Va aparte de `asignar` a
+   *  propósito: aquél fija **quién ve**, y es lo que da acceso. */
+  participacion: (slug: string, usuario_id: number, participacion: number) =>
+    api.put<{ slug: string; usuario_id: number; participacion: number }>(
+      `/api/sucursales/${slug}/participacion`, { usuario_id, participacion },
+    ),
   asignar: (slug: string, usuario_ids: number[]) =>
     api.put<{ slug: string; usuario_ids: number[] }>(
       `/api/sucursales/${slug}/usuarios`, { usuario_ids },

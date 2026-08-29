@@ -19,10 +19,12 @@ ni de caja. El panel pregunta y descarta; si guardara, habria dos verdades
 sobre la misma plata y una de las dos quedaria vieja.
 """
 from datetime import datetime
+from decimal import Decimal
 
 from libraauth.models import Base
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func,
+    Boolean, CheckConstraint, DateTime, ForeignKey, Numeric, String, Text,
+    UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -95,6 +97,14 @@ class UsuarioSucursal(Base):
         # consolidado: el facturado saldria al doble, con cara de numero
         # correcto. Lo impide la base, no el router.
         UniqueConstraint("usuario_id", "sucursal_id", name="uq_usuario_sucursal"),
+        # Un porcentaje fuera de 0..100 no significa nada, y lo impide la base y
+        # no el router: el repositorio no es el unico que escribe esta tabla
+        # ---la escribe tambien el `asignar` que reemplaza el conjunto--- y una
+        # validacion en un solo camino deja el otro abierto.
+        CheckConstraint(
+            "participacion >= 0 AND participacion <= 100",
+            name="ck_participacion_0_100",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -103,6 +113,26 @@ class UsuarioSucursal(Base):
     )
     sucursal_id: Mapped[int] = mapped_column(
         ForeignKey("sucursales.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: Que porcentaje de esta sucursal le corresponde a este socio.
+    #:
+    #: 🔑 **Es un dato, no un calculo.** Decision del humano el 2026-08-29,
+    #: entre las dos lecturas que planteaba el analisis: el socio ve los numeros
+    #: **completos** de las sucursales donde participa, y el porcentaje se
+    #: muestra al lado como referencia. La otra lectura ---que viera "su parte",
+    #: el 30% de la facturacion--- arrastra decisiones que no son de software:
+    #: si la participacion cambio a mitad de año, si el historico se recalcula,
+    #: si se prorratean los gastos o solo los ingresos.
+    #:
+    #: ⚠️ Por eso **ninguna consulta de numeros la mira**. Si algun dia alguien
+    #: la usa para multiplicar, eso es la otra lectura y hay que decidirla de
+    #: nuevo, no deducirla de que la columna existe.
+    #:
+    #: `0` no significa "no participa" sino "no se cargo": la participacion no
+    #: es lo que da acceso ---eso lo da la fila--- y arrancar en cero es lo que
+    #: permite asignar primero y completar despues.
+    participacion: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("0"), server_default="0"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
