@@ -10,9 +10,10 @@ import asyncio
 import time
 
 import pytest
-from .conftest import hacer_cliente
 
 from libra_panel.cliente_sucursal import SucursalSinRespuesta
+
+from .conftest import hacer_cliente
 
 NUCLEO = {"facturado": 100.0, "cobrado": 90.0, "sin_cobrar": {"cantidad": 1, "monto": 10.0}}
 

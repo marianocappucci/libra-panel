@@ -9,11 +9,17 @@ import httpx
 import pytest
 
 from libra_panel.cliente_sucursal import (
-    HEADER_CREDENCIAL, RUTA_RESUMEN, ClienteSucursal, SucursalSinRespuesta,
+    HEADER_CREDENCIAL,
+    RUTA_RESUMEN,
+    ClienteSucursal,
+    SucursalSinRespuesta,
 )
 
 from .sucursal_falsa import (
-    HTML_DE_LA_SPA, NUCLEO_TIPICO, crear_sucursal_falsa, crear_sucursal_que_contesta,
+    HTML_DE_LA_SPA,
+    NUCLEO_TIPICO,
+    crear_sucursal_falsa,
+    crear_sucursal_que_contesta,
 )
 
 CREDENCIAL = "credencial-de-la-sucursal-uno"

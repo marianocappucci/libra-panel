@@ -21,12 +21,15 @@ from sqlalchemy import text
 
 from libra_panel import db
 from libra_panel.cliente_sucursal import (
-    ClienteSucursal, EmpleadoYaExiste, SucursalSinRespuesta,
+    ClienteSucursal,
+    EmpleadoYaExiste,
+    SucursalSinRespuesta,
 )
 
 from .conftest import hacer_cliente
 from .sucursal_falsa import (
-    HTML_DE_LA_SPA, crear_sucursal_de_empleados,
+    HTML_DE_LA_SPA,
+    crear_sucursal_de_empleados,
     crear_sucursal_que_contesta_al_alta,
 )
 
