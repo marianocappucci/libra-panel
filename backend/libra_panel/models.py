@@ -23,8 +23,15 @@ from decimal import Decimal
 
 from libraauth.models import Base
 from sqlalchemy import (
-    Boolean, CheckConstraint, DateTime, ForeignKey, Numeric, String, Text,
-    UniqueConstraint, func,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 

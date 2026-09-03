@@ -5,8 +5,12 @@ de `consolidado.py`. Si alguno se pone en rojo, el panel volvio a poder mostrar
 un numero mas chico que la realidad con cara de numero correcto.
 """
 from libra_panel.consolidado import (
-    ResultadoSucursal, agrupar_por_cuit, armar_respuesta, consolidar,
-    normalizar_cuit, sumar_bloque,
+    ResultadoSucursal,
+    agrupar_por_cuit,
+    armar_respuesta,
+    consolidar,
+    normalizar_cuit,
+    sumar_bloque,
 )
 
 

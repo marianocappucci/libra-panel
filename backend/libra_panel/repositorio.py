@@ -6,10 +6,10 @@ que la credencial descifrada sale de aca es `credencial_de()`, que la usa el
 cliente HTTP para armar el header. Una pantalla que mostrara la credencial
 seria una forma de filtrarla que ningun `.gitignore` tapa.
 """
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Callable
 
 from libraauth.crypto import ClaveDeCifradoAusente, SecretoIndescifrable, cifrar, descifrar
 from sqlalchemy import delete, select

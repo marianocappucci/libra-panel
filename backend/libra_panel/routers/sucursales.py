@@ -19,7 +19,10 @@ from ..cliente_sucursal import SucursalSinRespuesta
 from ..deps import requiere_admin, usuario_actual
 from ..fechas import rango_por_defecto
 from ..repositorio import (
-    AsignacionDesconocida, ParticipacionInvalida, SlugTomado, SucursalDesconocida,
+    AsignacionDesconocida,
+    ParticipacionInvalida,
+    SlugTomado,
+    SucursalDesconocida,
 )
 
 router = APIRouter(prefix="/api/sucursales", tags=["sucursales"])
