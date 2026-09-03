@@ -4,7 +4,9 @@ from sqlalchemy import text
 
 from libra_panel import db
 from libra_panel.repositorio import (
-    RegistroDeSucursales, SlugTomado, SucursalDesconocida,
+    RegistroDeSucursales,
+    SlugTomado,
+    SucursalDesconocida,
 )
 
 

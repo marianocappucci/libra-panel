@@ -11,7 +11,7 @@ from libraauth.repository import UsernameTaken
 from pydantic import BaseModel, Field
 
 from ..deps import requiere_admin
-from ..models import ROLES, ROL_POR_DEFECTO
+from ..models import ROL_POR_DEFECTO, ROLES
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"], dependencies=[Depends(requiere_admin)])
 

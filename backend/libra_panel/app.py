@@ -31,6 +31,7 @@ from libracore.security_headers import SecurityHeadersMiddleware
 
 from . import db
 from .cliente_sucursal import ClienteSucursal
+
 # El import de `models` no es decorativo: es lo que registra `sucursales` y
 # `usuario_sucursales` en el metadata de libraauth para que el `create_all` de
 # abajo las cree. Sin el, las tablas no existen y no falla nada al arrancar.
