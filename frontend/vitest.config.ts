@@ -29,7 +29,7 @@ export default mergeConfig(
         // compartida (Login, Layout, tabla, Usuarios) se prueba a fondo en
         // libra-ui, que tiene su propia suite y su propio CI; acá se prueba
         // lo propio del panel, que es cómo se LEE un total parcial.
-        thresholds: { lines: 84 },
+        thresholds: { lines: 87 },
         reporter: ['text-summary', 'json-summary'],
         include: ['src/**/*.{ts,tsx}'],
         exclude: [
