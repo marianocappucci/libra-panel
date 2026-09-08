@@ -17,7 +17,7 @@ dependencies = [
     # `LIBRA_PANEL_TOKEN` / `X-Panel-Auth`. Este repo es el consumidor del OTRO
     # lado de ese header — el que lo manda. Bajarlo deja al panel sin forma de
     # autenticarse contra ninguna sucursal.
-    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.29.0",
+    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.37.0",
     # Solo por `security_headers`, que es lo que hace que los seis productos y
     # el backoffice manden las mismas cabeceras. Se pinea igual que el resto de
     # la familia aunque el panel no use nada mas de este motor: el dia que
@@ -26,7 +26,7 @@ dependencies = [
     # NO se usa `libracore.admin` ni `provisioning`: el panel no administra
     # instancias ni toca Docker. Por eso su imagen no lleva el cliente de
     # Docker, a diferencia de la de libra-backoffice.
-    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.41.0",
+    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.89.0",
     "fastapi>=0.111,<1",
     "uvicorn[standard]>=0.30,<1",
     # El panel le habla a cada sucursal por HTTP, en paralelo y con timeout.
