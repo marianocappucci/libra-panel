@@ -218,3 +218,100 @@ def test_un_usuario_sin_id_numerico_no_ve_ninguna(registro):
     """El `PANEL_USER`/`SERVICE_USER` de libraauth tiene `id: None`."""
     assert registro.listar_de_usuario(None) == []
     assert RegistroDeSucursales(db.get_session_factory()).listar_de_usuario("@panel") == []
+
+
+# ── Cerrar una rotacion de SECRET_KEY ───────────────────────────────────────
+#
+# Lo que fijan estos tests es el ciclo completo, no que el AES sepa probar dos
+# claves: rotar, leer con la vieja declarada, recifrar, y SACAR la variable sin
+# perder nada. El ultimo paso es el unico que prueba que la rotacion termina.
+
+from libraauth.crypto import CLAVES_ANTERIORES, SecretoIndescifrable  # noqa: E402
+
+CLAVE_VIEJA = "clave-de-test-del-panel-no-usar-en-produccion"
+
+
+def _rotar(monkeypatch, nueva="clave-nueva-del-panel-de-test", anteriores=CLAVE_VIEJA):
+    monkeypatch.setenv("SECRET_KEY", nueva)
+    if anteriores is None:
+        monkeypatch.delenv(CLAVES_ANTERIORES, raising=False)
+    else:
+        monkeypatch.setenv(CLAVES_ANTERIORES, anteriores)
+
+
+def test_pendientes_de_recifrado_nombra_las_que_dependen_de_la_clave_vieja(
+    registro, monkeypatch
+):
+    crear(registro, "c1")
+    crear(registro, "c2", credencial="")
+    assert registro.pendientes_de_recifrado() == []
+    _rotar(monkeypatch)
+    # La que no tiene credencial no cuenta: no hay nada que recifrar.
+    assert registro.pendientes_de_recifrado() == ["c1"]
+
+
+def test_recifrar_deja_la_credencial_bajo_la_clave_viva(registro, monkeypatch):
+    """El ciclo entero. Lo que prueba que cerro es que la credencial sobrevive
+    a SACAR la variable de transicion."""
+    crear(registro, "c1")
+    _rotar(monkeypatch)
+
+    assert registro.recifrar_credenciales() == ["c1"]
+    assert registro.pendientes_de_recifrado() == []
+
+    _rotar(monkeypatch, anteriores=None)
+    assert registro.credencial_de("c1") == "secreta-1"
+
+
+def test_sin_recifrar_sacar_la_variable_pierde_la_credencial(registro, monkeypatch):
+    """Control negativo del de arriba: sin el recifrado, el mismo escenario
+    termina con la sucursal sin credencial."""
+    crear(registro, "c1")
+    _rotar(monkeypatch, anteriores=None)
+    with pytest.raises(Exception):
+        registro.credencial_de("c1")
+
+
+def test_recifrar_es_idempotente(registro):
+    crear(registro, "c1")
+    assert registro.recifrar_credenciales() == []
+
+
+def test_recifrar_saltea_la_ilegible_y_arregla_el_resto(registro, monkeypatch):
+    """Abortar el lote dejaria a medias a las que si se podian arreglar, y
+    pisar la ilegible destruiria el unico rastro de lo que habia."""
+    crear(registro, "buena")
+    # `rota` queda cifrada con una clave que despues no se declara en ningun
+    # lado, asi que es irrecuperable.
+    monkeypatch.setenv("SECRET_KEY", "clave-huerfana-que-nadie-declara")
+    monkeypatch.delenv(CLAVES_ANTERIORES, raising=False)
+    crear(registro, "rota", credencial="secreta-rota")
+    with db.get_session_factory()() as s:
+        antes = s.execute(
+            text("select credencial_cifrada from sucursales where slug='rota'")
+        ).scalar_one()
+
+    _rotar(monkeypatch)
+    assert registro.recifrar_credenciales() == ["buena"]
+
+    with db.get_session_factory()() as s:
+        assert s.execute(
+            text("select credencial_cifrada from sucursales where slug='rota'")
+        ).scalar_one() == antes
+
+
+def test_la_ilegible_no_aparece_como_pendiente_de_recifrado(registro, monkeypatch):
+    """Son dos situaciones distintas: "falta recifrarla" tiene arreglo
+    automatico y "no se puede leer" hay que volver a cargarla a mano."""
+    monkeypatch.setenv("SECRET_KEY", "clave-huerfana-que-nadie-declara")
+    monkeypatch.delenv(CLAVES_ANTERIORES, raising=False)
+    crear(registro, "rota", credencial="secreta-rota")
+    _rotar(monkeypatch)
+    assert registro.pendientes_de_recifrado() == []
+    with pytest.raises(SecretoIndescifrable):
+        from libraauth.crypto import descifrar
+        with db.get_session_factory()() as s:
+            descifrar(s.execute(
+                text("select credencial_cifrada from sucursales where slug='rota'")
+            ).scalar_one())
+

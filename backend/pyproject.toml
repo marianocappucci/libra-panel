@@ -17,7 +17,7 @@ dependencies = [
     # `LIBRA_PANEL_TOKEN` / `X-Panel-Auth`. Este repo es el consumidor del OTRO
     # lado de ese header — el que lo manda. Bajarlo deja al panel sin forma de
     # autenticarse contra ninguna sucursal.
-    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.37.0",
+    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.38.0",
     # Solo por `security_headers`, que es lo que hace que los seis productos y
     # el backoffice manden las mismas cabeceras. Se pinea igual que el resto de
     # la familia aunque el panel no use nada mas de este motor: el dia que
