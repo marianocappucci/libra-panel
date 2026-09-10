@@ -184,3 +184,32 @@ LIBRA_PANEL_TEST_DATABASE_URL=postgresql://panel:panel@127.0.0.1:55432/panel .ve
 ```bash
 cd frontend && npm install && npm run build && npm test
 ```
+
+## Rotar el `SECRET_KEY` sin perder las credenciales
+
+De `SECRET_KEY` se **deriva** la clave con la que se cifra la credencial de
+panel de cada sucursal. Rotarlo a secas las deja ilegibles — y el panel no se
+cae, muestra las sucursales **sin respuesta**, que es la forma silenciosa de
+romperse. Pasó el 2026-09-07 y se detectó dos días después.
+
+El ciclo tiene cuatro pasos y el tercero es el que no se puede saltear:
+
+1. Rotar `SECRET_KEY` en el `.env`/compose de la instancia.
+2. Poner el valor **anterior** en `LIBRAAUTH_CLAVES_ANTERIORES` (acepta varios,
+   separados por coma) y recrear el contenedor.
+3. `docker exec <contenedor> python -m libra_panel.recifrar`
+4. **Sacar `LIBRAAUTH_CLAVES_ANTERIORES`** y recrear de nuevo.
+
+Para ver en qué estado está sin escribir nada:
+
+```
+docker exec <contenedor> python -m libra_panel.recifrar --ver
+```
+
+Sale distinto de cero mientras quede alguna credencial dependiendo de una clave
+anterior. Mientras eso pase, el paso 4 perdería esas credenciales.
+
+> Una credencial que **no se puede leer con ninguna** clave conocida no se toca
+> ni aparece como pendiente: hay que volver a cargarla a mano. Son dos
+> situaciones distintas y el comando las distingue a propósito.
+
