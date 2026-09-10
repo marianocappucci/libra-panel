@@ -11,7 +11,14 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from decimal import Decimal
 
-from libraauth.crypto import ClaveDeCifradoAusente, SecretoIndescifrable, cifrar, descifrar
+from libraauth.crypto import (
+    ClaveDeCifradoAusente,
+    SecretoIndescifrable,
+    cifrar,
+    descifrar,
+    descifrar_al_dia,
+    recifrar,
+)
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -222,7 +229,64 @@ class RegistroDeSucursales:
         except (SecretoIndescifrable, ClaveDeCifradoAusente) as exc:
             raise CredencialIlegible(str(exc)) from exc
 
+    def pendientes_de_recifrado(self) -> list[str]:
+        """Los slugs cuya credencial se lee con una clave ANTERIOR.
+
+        No es un error: se leen bien. Lo que dicen es que la rotacion de
+        `SECRET_KEY` **todavia no termino** — mientras haya alguno, sacar
+        `LIBRAAUTH_CLAVES_ANTERIORES` dejaria esas sucursales sin credencial.
+
+        Una credencial ilegible **no aparece aca ni tumba la consulta**: eso ya
+        lo reporta `para_consultar()` como sucursal con problema, y son dos
+        situaciones distintas para quien las mira.
+        """
+        pendientes = []
+        with self.session_factory() as session:
+            filas = [
+                (s.slug, s.credencial_cifrada)
+                for s in session.execute(select(Sucursal).order_by(Sucursal.id)).scalars()
+            ]
+        for slug, blob in filas:
+            if not blob:
+                continue
+            try:
+                if not descifrar_al_dia(blob)[1]:
+                    pendientes.append(slug)
+            except (SecretoIndescifrable, ClaveDeCifradoAusente):
+                continue
+        return pendientes
+
     # ── Escritura ───────────────────────────────────────────────────────────
+
+    def recifrar_credenciales(self) -> list[str]:
+        """Deja bajo la clave VIGENTE las credenciales que esten con una vieja.
+
+        Devuelve los slugs que efectivamente cambiaron. Es el paso que cierra
+        una rotacion: recien despues de esto se puede sacar
+        `LIBRAAUTH_CLAVES_ANTERIORES` sin perder nada.
+
+        **Idempotente y parcial a proposito.** Correrlo dos veces no escribe la
+        segunda; y una sucursal con la credencial ilegible **se saltea sin
+        tocarla** en vez de abortar el lote — abortar dejaria a medias a las que
+        si se podian arreglar, y pisarla destruiria el unico rastro de lo que
+        habia. Esa queda reportada por `para_consultar()`, que es donde
+        corresponde.
+        """
+        cambiados = []
+        with self.session_factory() as session:
+            for s in session.execute(select(Sucursal).order_by(Sucursal.id)).scalars():
+                if not s.credencial_cifrada:
+                    continue
+                try:
+                    nuevo = recifrar(s.credencial_cifrada)
+                except (SecretoIndescifrable, ClaveDeCifradoAusente):
+                    continue
+                if nuevo is not None:
+                    s.credencial_cifrada = nuevo
+                    cambiados.append(s.slug)
+            if cambiados:
+                session.commit()
+        return cambiados
 
     def crear(
         self, *, slug: str, nombre: str, url_base: str, cuit: str = "",
