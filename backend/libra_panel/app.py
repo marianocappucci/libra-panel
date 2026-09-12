@@ -182,8 +182,13 @@ def create_app(
     #
     # Ademas es el prefijo que ya usan cuatro de los seis productos, asi que
     # converge hacia la convencion que alguien cumple en vez de inventar una.
+    #
+    # `captcha=True` (libraauth v0.40.0, ADR-014): captcha ALTCHA SIEMPRE, no
+    # recien despues de N fallos — decision del humano del 2026-09-11. Suma
+    # `GET /auth/captcha` y exige la solucion en el login y en el
+    # forgot-password; el bloqueo por IP sigue cortando antes.
     app.include_router(
-        build_json_api_auth_router(prefix="/auth", incluir_password_reset=True)
+        build_json_api_auth_router(prefix="/auth", incluir_password_reset=True, captcha=True)
     )
     app.include_router(resumen.router)
     app.include_router(sucursales.router)

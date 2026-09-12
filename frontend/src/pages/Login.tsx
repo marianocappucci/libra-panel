@@ -13,4 +13,8 @@ export const Login = createLogin<Usuario>({
   // /api/auth/forgot-password` existe. Es la mitad visible de por qué el panel
   // usa `SessionAuth`.
   forgotPasswordPath: '/forgot-password',
+  // Recuadro «No soy un robot» (ALTCHA, libra-ui v0.69.2). Lo sirve el router
+  // de libraauth con `captcha=True`; libra-ui lo pinta sólo si esta ruta
+  // contesta con un desafío, y deja «Ingresar» deshabilitado hasta tildarlo.
+  captchaPath: '/auth/captcha',
 })
