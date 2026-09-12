@@ -35,6 +35,7 @@ os.environ.setdefault("LIBRA_PANEL_ADMIN_PASSWORD", "admin-de-test")
 os.environ.setdefault("LIBRA_PANEL_ADMIN_USERNAME", "admin")
 
 import pytest  # noqa: E402
+from libraauth import session_auth as _session_auth  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from libra_panel import db  # noqa: E402
@@ -64,6 +65,58 @@ def anyio_backend():
     de concurrencia en error por un motivo que no tiene que ver con el panel.
     """
     return "asyncio"
+
+
+# ── Captcha ALTCHA: aprobado para el resto de la suite ─────────────────────
+#
+# Desde libraauth v0.40.0 el panel monta el router de auth con `captcha=True`:
+# el login y el forgot-password exigen la solucion de un desafio. La suite
+# postea a `/auth/login` en muchos lugares (el fixture `admin`, los tests de
+# usuarios, de resumen, de aprovisionamiento...) y resolver un desafio en cada
+# uno no prueba nada del panel.
+#
+# 🔴 **El captcha lo prueba libraauth; aca solo se cablea.** Lo que es del
+# panel —que la ruta exista, que un login sin captcha rebote— lo fija
+# `test_captcha_login.py`, que restaura la funcion real con
+# `_CAPTCHA_DE_ORIGINAL`. Si alguien sacara `captcha=True` del router, ese
+# archivo es lo que se pondria rojo.
+
+#: La funcion real, para que un test pueda volver a ponerla.
+_CAPTCHA_DE_ORIGINAL = _session_auth._captcha_de
+
+
+class _CaptchaQueAprueba:
+    """Doble del `Captcha` de libraauth: aprueba cualquier payload.
+
+    `emitir()` delega en un `Captcha` real y barato, para que `GET
+    /auth/captcha` siga devolviendo un desafio con la forma de siempre.
+    """
+
+    def __init__(self):
+        from libraauth.captcha import Captcha
+
+        self._real = Captcha("clave-de-prueba", costo=1, contador_min=1, contador_rango=5)
+
+    def emitir(self) -> dict:
+        return self._real.emitir()
+
+    def verificar(self, payload) -> bool:
+        return True
+
+
+_CAPTCHA_DE_PRUEBA = _CaptchaQueAprueba()
+
+
+@pytest.fixture(autouse=True)
+def _captcha_aprobado(monkeypatch):
+    """Todo login y forgot-password de la suite pasa el captcha.
+
+    Se parchea la funcion de modulo `libraauth.session_auth._captcha_de`
+    porque el router la resuelve por nombre en cada request: parchear
+    `app.state.captcha` no alcanzaria, porque cada test arma su propia app con
+    `crear_app` (y algunos, mas de una).
+    """
+    monkeypatch.setattr("libraauth.session_auth._captcha_de", lambda request: _CAPTCHA_DE_PRUEBA)
 
 
 def _url_de_test() -> str:

@@ -7,5 +7,8 @@ import { createForgotPassword, createResetPassword } from 'libra-ui/PasswordRese
 
 const COMUN = { productName: 'Panel', productInitial: 'P' }
 
-export const OlvideMiPassword = createForgotPassword(COMUN)
+// El pedido del mail lleva el mismo captcha ALTCHA que el login: sin él, el
+// endpoint manda correos a pedido de cualquiera. El reset-password no lo
+// lleva: ya lo gatea el token que llegó por mail.
+export const OlvideMiPassword = createForgotPassword({ ...COMUN, captchaPath: '/auth/captcha' })
 export const ResetearPassword = createResetPassword(COMUN)
