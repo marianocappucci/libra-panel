@@ -15,7 +15,7 @@ El fallback de la SPA tambien es real: se monta un catch-all que devuelve 200
 con HTML, que es lo que hacen los seis productos de la familia y la razon por la
 que el cliente del panel no se conforma con el codigo de estado.
 """
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from libraauth.session_auth import json_api_require_panel_o_admin, token_de_panel_valido
 from libracore.resumen_router import build_resumen_router
@@ -30,7 +30,10 @@ class _SesionQueNoLoguea:
     `AttributeError` -> 500, cuando lo correcto para el panel es un 401.
     """
 
-    def get_current_user(self, request: Request):
+    def get_current_user(self, request: Request, response: Response = None):
+        # `response` lo agrego libraauth v0.42.0 (renovacion deslizante de la
+        # cookie): el guard llama get_current_user(request, response) por
+        # posicion, asi que el doble tiene que aceptarlo aunque no lo use.
         return None
 
 
