@@ -32,7 +32,8 @@ dependencies = [
     # Docker, a diferencia de la de libra-backoffice.
     # v1.147.0 -> v1.148.0 (2026-10-09): filtros de fecha por dia completo (`libracore.fechas`, ADR-037): una fila con hora del ultimo dia entra en reportes, listados y libros. Sin migracion.
     # v1.148.0 -> v1.149.0 (2026-10-09): en una demo (`DEMO_MODE=1`) la empresa es siempre ficticia (`config_manager`, ADR-038 de libracore). Fuera de una demo no cambia nada. Sin migracion.
-    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.149.0",
+    # v1.149.0 -> v1.151.0 (2026-10-09): un plan retirado se resuelve con `PLANES_RETIRADOS` en el alta y en el cambio de plan (`provisioning.resolver_plan`, libracore#375). Este producto no retira planes: no cambia nada. Sin migracion.
+    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.151.0",
     "fastapi>=0.111,<1",
     "uvicorn[standard]>=0.30,<1",
     # El panel le habla a cada sucursal por HTTP, en paralelo y con timeout.
