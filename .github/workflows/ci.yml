@@ -35,7 +35,7 @@ jobs:
       # `postgres:16` y no `postgres:16-alpine`: la misma imagen que corre en
       # producción. El collation viene de la imagen y alpine ordena por bytes.
       postgres:
-        image: postgres:16
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_USER: panel
           POSTGRES_PASSWORD: panel
