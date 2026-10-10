@@ -26,7 +26,12 @@ jobs:
       run:
         working-directory: backend
 
-    services:
+    env:
+      LIBRA_PANEL_TEST_DATABASE_URL: postgresql://panel:panel@127.0.0.1:5432/panel
+
+    steps:
+      # El PostgreSQL sale de la Action compartida de libra-web-kit (`postgres-ci-v1`, desde el espejo de ECR;
+      # reglas/ci.md del wiki), con los mismos datos y el mismo healthcheck que el `services:` de antes.
       # 🔴 PostgreSQL de verdad, no SQLite. Es la decisión de familia del
       # 2026-08-12, y este repo tiene una razón propia: la
       # `UNIQUE(usuario_id, sucursal_id)` que impide que una sucursal entre dos
@@ -34,25 +39,15 @@ jobs:
       #
       # `postgres:16` y no `postgres:16-alpine`: la misma imagen que corre en
       # producción. El collation viene de la imagen y alpine ordena por bytes.
-      postgres:
-        image: public.ecr.aws/docker/library/postgres:16
-        env:
-          POSTGRES_USER: panel
-          POSTGRES_PASSWORD: panel
-          POSTGRES_DB: panel
-          TZ: America/Argentina/Buenos_Aires
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -U panel -d panel"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-
-    env:
-      LIBRA_PANEL_TEST_DATABASE_URL: postgresql://panel:panel@127.0.0.1:5432/panel
-
-    steps:
+      - name: PostgreSQL de la suite
+        uses: marianocappucci/libra-web-kit/.github/actions/postgres-ci@postgres-ci-v1
+        with:
+          variante: debian
+          base: panel
+          usuario: panel
+          clave: panel
+          reintentos: "10"
+          tz: America/Argentina/Buenos_Aires
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
