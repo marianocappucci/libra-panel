@@ -4,10 +4,9 @@
 // no inline en cada tarjeta por la misma razón: un `toLocaleString` copiado en
 // N vistas termina divergiendo.
 
-const PESOS = new Intl.NumberFormat('es-AR', {
-  style: 'currency', currency: 'ARS', maximumFractionDigits: 2,
-})
+import { formatoMoneda } from 'libra-ui/formatos'
 
+// La plata sale del formateador común del kit (libra-ui/formatos, ADR-050); los conteos siguen siendo enteros.
 const ENTEROS = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 })
 
 /** Claves que son plata. El resto son cantidades. */
@@ -21,7 +20,7 @@ export function esPlata(clave: string): boolean {
 
 export function formatearValor(clave: string, valor: unknown): string {
   if (typeof valor !== 'number') return String(valor ?? '—')
-  return esPlata(clave) ? PESOS.format(valor) : ENTEROS.format(valor)
+  return esPlata(clave) ? formatoMoneda(valor) : ENTEROS.format(valor)
 }
 
 /** Etiquetas legibles. Una clave desconocida se muestra tal cual, prolija.
