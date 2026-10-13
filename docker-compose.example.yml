@@ -39,6 +39,24 @@ services:
       # mirando un spinner.
       TIMEOUT_SUCURSAL: ${TIMEOUT_SUCURSAL:-6}
       TZ: America/Argentina/Buenos_Aires
+      # Procesos de uvicorn (el CMD de la imagen lo pasa a `--workers`). Se queda en 1: subirlo es una decision, no un
+      # descuido. Con mas de uno el captcha del login ya anota en la base (`UsadosEnBase`, libraauth v0.50.0), pero la
+      # suite y el despliegue se midieron con un proceso. Ver "Varios procesos" en el README.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      # Registro de errores de la familia (ADR-045 de libracore): una linea JSON por cada 500 en
+      # `$LIBRA_ERRORES_DIR/errores.jsonl`, que lee el vigia del host (`operaciones/vigilar_errores.py`).
+      # 🔴 Tiene que caer en un VOLUMEN: sin el, cada `docker compose up` (recreate) borra el registro. Esta app no
+      # tiene `DATA_DIR`, asi que se lo fija aca. El volumen `estado` se monta en `/var/lib/libra-panel` y no
+      # directo en `.../errores` para que en el host el archivo quede en `<volumen>/_data/errores/errores.jsonl`,
+      # que es lo que busca el glob por defecto del vigia (`/var/lib/docker/volumes/*/_data/errores/errores.jsonl*`).
+      LIBRA_ERRORES_DIR: /var/lib/libra-panel/errores
+      # `cliente` (aviso por Telegram en la primera aparicion de cada firma) | `demo` | `dev` (resumen diario).
+      LIBRA_ENTORNO: cliente
+      # El nombre del contenedor: es lo que dice la linea y el aviso. `LIBRA_VERSION` (el release) sale del tag de
+      # la imagen, que el Dockerfile toma de `APP_VERSION`.
+      LIBRA_INSTANCIA: ${PANEL_SLUG}-panel
+    volumes:
+      - estado:/var/lib/libra-panel
     networks:
       - datos
       - stack_stack-net
@@ -101,6 +119,9 @@ services:
 
 volumes:
   panel-datos:
+  # El registro de errores (y lo que el panel guarde en disco mas adelante). Aparte del de PostgreSQL a proposito: el
+  # del sidecar se restaura y se respalda, este es un registro de operacion que no entra en ningun respaldo.
+  estado:
 
 networks:
   datos:

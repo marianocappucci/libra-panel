@@ -160,10 +160,39 @@ Dockerfile              build del frontend -> estáticos servidos por el backend
 | `PANEL_NAME` | no | Nombre para mostrar. El panel es transversal: el branding sale de acá. |
 | `TIMEOUT_SUCURSAL` | no | Segundos por sucursal. Default 6. Corto a propósito. |
 | `LIBRA_PANEL_RESET_URL_BASE` | no | Dónde aterriza el link del mail de recupero. |
+| `WEB_CONCURRENCY` | no | Procesos de uvicorn (`--workers` del `CMD`). Default 1. Ver «Varios procesos». |
+| `LIBRA_ERRORES_DIR` | no | Carpeta del registro de errores (`errores.jsonl`). Sin ella cae en `$DATA_DIR/errores` o en el directorio de trabajo, o sea **dentro del contenedor**: en producción se fija a una carpeta de un volumen (el compose de ejemplo la monta en `/var/lib/libra-panel/errores`). |
+| `LIBRA_ENTORNO` | no | `cliente`, `demo` o `dev`: de eso depende cómo avisa el vigía. Sin ella, `desconocido` (se trata como `cliente`). |
+| `LIBRA_INSTANCIA` | no | Nombre del contenedor (`<slug>-panel`). Sale en cada línea del registro. |
+| `LIBRA_VERSION` | no | El `release` de cada línea. La imagen la trae del tag con que se construyó (`APP_VERSION`). |
 
 Y en **cada sucursal**, del otro lado: `LIBRA_PANEL_TOKEN`, distinta por
 instancia. Sin ella el guard de `libraauth` ni mira el header (opt-in por
 ausencia) y contesta 401.
+
+## Registro de errores
+
+Desde `libracore` v1.159.0 (ADR-045) un `500` ya no se pierde en el stdout del contenedor: `instalar_registro_de_errores(app, "libra-panel")`
+(en `app.py`, al lado de `SecurityHeadersMiddleware`) responde `{"detail": "Error interno", "ref": "a1b2c3d4"}` y deja **una línea JSON** en
+`$LIBRA_ERRORES_DIR/errores.jsonl` (rotación 5 MB × 3, sin cuerpos, cookies ni datos personales). El `ref` es el código que la pantalla «Algo
+falló» (`<ErrorBoundary>` de `libra-ui`, en `main.tsx`) le muestra al usuario. Los errores del navegador llegan a `POST /api/errores-cliente`
+(`instalarReporteDeErrores`). Lee los archivos el vigía del host (`operaciones/vigilar_errores.py` del wiki) y avisa por Telegram.
+
+🔴 **El archivo tiene que estar en un volumen**: sin él, cada `docker compose up` que recrea el contenedor lo borra. El compose de ejemplo monta el
+volumen `estado` en `/var/lib/libra-panel` y fija `LIBRA_ERRORES_DIR=/var/lib/libra-panel/errores`; en el host queda en
+`/var/lib/docker/volumes/<proyecto>_estado/_data/errores/errores.jsonl`, que es lo que busca el glob por defecto del vigía.
+
+## Varios procesos
+
+El contenedor corre **un solo uvicorn** (`WEB_CONCURRENCY` vale 1 si no se la toca) y así se queda: subirlo es una decisión aparte. Lo que ya está
+listo para cuando se decida (libraauth v0.50.0, ADR-023):
+
+- **El captcha del login anota los desafíos usados en la base** (`UsadosEnBase`, tabla `libraauth_captcha_usados`, que crea el `create_all` del
+  arranque como las demás). Con la lista en memoria, un desafío resuelto serviría una vez **por worker**. Cuesta una ida a la base por cada login.
+- **El bloqueo por intentos del login ya era compartido** (cuenta sobre `auth_log`, en la base).
+- El panel no guarda estado en archivos ni en memoria entre pedidos (el consolidado no se cachea), así que no hay nada más que mover.
+
+Cada proceso abre su propio pool de conexiones: antes de subir `WEB_CONCURRENCY`, mirar `max_connections` del PostgreSQL del sidecar.
 
 ## Desarrollo
 

@@ -46,6 +46,7 @@ from libra_panel.settings import Settings  # noqa: E402
 #: del metadata porque son de DOS metadatas distintas (libraauth y el panel) y
 #: el orden importa: las hijas primero.
 TABLAS = (
+    "libraauth_captcha_usados",
     "usuario_sucursales",
     "sucursales",
     "password_reset_tokens",
@@ -116,7 +117,8 @@ def _captcha_aprobado(monkeypatch):
     `app.state.captcha` no alcanzaria, porque cada test arma su propia app con
     `crear_app` (y algunos, mas de una).
     """
-    monkeypatch.setattr("libraauth.session_auth._captcha_de", lambda request: _CAPTCHA_DE_PRUEBA)
+    # `usados` es el segundo parametro desde libraauth v0.50.0 (`captcha_usados=` del router, ADR-023).
+    monkeypatch.setattr("libraauth.session_auth._captcha_de", lambda request, usados=None: _CAPTCHA_DE_PRUEBA)
 
 
 def _url_de_test() -> str:
@@ -153,6 +155,13 @@ def crear_app(settings):
     """
 
     def _crear(cliente_sucursal=None):
+        # Cada `create_app` deja un engine con sus conexiones abiertas, y `db.configure` pisa el anterior sin cerrarlo:
+        # con la suite entera se pasa del `max_connections=100` de PostgreSQL ("too many clients already"). Se cierra
+        # el de la app anterior (el engine sigue sirviendo: dispose solo suelta las conexiones del pool).
+        try:
+            db.get_engine().dispose()
+        except RuntimeError:
+            pass  # la primera app de la sesion: todavia no hay engine
         db.configure(settings.database_url)
         with db.get_engine().begin() as conn:
             for tabla in TABLAS:

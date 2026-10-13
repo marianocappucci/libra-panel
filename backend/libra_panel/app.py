@@ -22,11 +22,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from libraauth.auth_events import AuthEventRepository
 from libraauth.bootstrap import ensure_default_admin
+from libraauth.captcha import UsadosEnBase
 from libraauth.models import Base as AuthBase
 from libraauth.password_reset import PasswordResetService
 from libraauth.repository import UserRepository
 from libraauth.session_auth import SessionAuth, build_json_api_auth_router
 from libraauth.smtp_settings import SmtpSettingsRepository, resolver_smtp_config
+from libracore.errores import instalar_registro_de_errores
 from libracore.security_headers import SecurityHeadersMiddleware
 
 from . import db
@@ -129,6 +131,10 @@ def create_app(
 
     app = FastAPI(title=f"{settings.panel_name} — Panel", docs_url=None, redoc_url=None)
     app.add_middleware(SecurityHeadersMiddleware)
+    # El registro de errores de la familia (ADR-045 de libracore): un 500 deja una linea JSON en
+    # `$LIBRA_ERRORES_DIR/errores.jsonl` con un `ref` que el usuario puede dictar, y se monta
+    # `POST /api/errores-cliente` para los errores del navegador. Al construir la app, antes del primer pedido.
+    instalar_registro_de_errores(app, "libra-panel")
 
     app.state.settings = settings
     app.state.users = users
@@ -187,8 +193,17 @@ def create_app(
     # recien despues de N fallos — decision del humano del 2026-09-11. Suma
     # `GET /auth/captcha` y exige la solucion en el login y en el
     # forgot-password; el bloqueo por IP sigue cortando antes.
+    #
+    # `captcha_usados=UsadosEnBase(sessions)` (libraauth v0.50.0, ADR-023): los desafios ya resueltos se anotan en la
+    # tabla `libraauth_captcha_usados` de la base del panel y no en la memoria del proceso. Hoy el contenedor corre
+    # UN solo uvicorn y daria igual; es lo que deja el login bien con `WEB_CONCURRENCY` > 1 (con la lista en memoria,
+    # un desafio resuelto serviria una vez por worker). La tabla la crea el `create_all` del arranque, igual que las
+    # demas: este producto no usa la cadena de Alembic de libraauth. Una ida a la base mas por cada login.
     app.include_router(
-        build_json_api_auth_router(prefix="/auth", incluir_password_reset=True, captcha=True)
+        build_json_api_auth_router(
+            prefix="/auth", incluir_password_reset=True, captcha=True,
+            captcha_usados=UsadosEnBase(sessions),
+        )
     )
     app.include_router(resumen.router)
     app.include_router(sucursales.router)
