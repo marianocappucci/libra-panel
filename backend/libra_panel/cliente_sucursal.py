@@ -13,13 +13,23 @@ los demas.
 
 Ver `wiki/analyses/panel-del-dueno-multisucursal.md`, punto 7.
 """
+import asyncio
+
 import httpx
+
+from .settings import TIMEOUT_SALUD_POR_DEFECTO
 
 #: Header que mira `libraauth.session_auth.token_de_panel_valido`.
 HEADER_CREDENCIAL = "X-Panel-Auth"
 
 #: Ruta que expone la factory `libracore.resumen_router.build_resumen_router`.
 RUTA_RESUMEN = "/api/resumen"
+
+#: El `/health` de la instancia. **Sin autenticacion**: es el que usan el
+#: healthcheck de Docker y el proxy, y los seis productos lo sirven ahi
+#: (`libracore.provisioning.configure(health_path=...)`). Por eso el panel no le
+#: manda la credencial: no la necesita y no tiene que viajar a donde no hace falta.
+RUTA_SALUD = "/health"
 
 
 class EmpleadoYaExiste(Exception):
@@ -47,13 +57,67 @@ class SucursalSinRespuesta(Exception):
 
 
 class ClienteSucursal:
-    def __init__(self, *, timeout: float, transport=None):
+    def __init__(
+        self, *, timeout: float, timeout_salud: float = TIMEOUT_SALUD_POR_DEFECTO, transport=None
+    ):
         self._timeout = timeout
+        self._timeout_salud = timeout_salud
         # Costura para los tests: con un `ASGITransport` la suite le habla a
         # una app FastAPI de verdad —con el router real de la factory de
         # LibraCore y su guard real— en vez de a un doble que podria estar de
         # acuerdo con un contrato equivocado. En produccion es siempre `None`.
         self._transport = transport
+
+    async def salud(self, *, url_base: str) -> dict:
+        """Si la instancia contesta su `/health`, o `SucursalSinRespuesta`.
+
+        Devuelve `{"version": str | None}`. La version sale del cuerpo **si la
+        instancia la manda**: hoy ningun producto de la familia pone `version` en
+        su `/health`, asi que sale `None` y la pantalla no la dibuja. Cuando
+        alguno la sume, aparece sola.
+
+        🔴 **El criterio es el del backoffice** (`routers/salud.py` de
+        libra-backoffice): el cuerpo tiene que parsear como JSON **y** ser un
+        objeto, sin exigir ninguna clave. Un 200 no alcanza: los productos sirven
+        su SPA con un catch-all, asi que una URL mal cargada contesta 200 con
+        `index.html` y un chequeo que mire solo el codigo la daria por viva.
+
+        **El timeout es un tope de pared** (`asyncio.timeout`) ademas del de
+        `httpx`, que es por fase: un servidor que gotea bytes cumple cada fase y
+        no vence nunca. Para una pantalla que corre las N en paralelo y tiene que
+        contestar rapido, el tope total es lo que importa.
+        """
+        url = f"{url_base.rstrip('/')}{RUTA_SALUD}"
+        try:
+            async with asyncio.timeout(self._timeout_salud):
+                async with httpx.AsyncClient(
+                    timeout=self._timeout_salud, transport=self._transport
+                ) as cliente:
+                    resp = await cliente.get(url)
+        except TimeoutError:
+            raise SucursalSinRespuesta(
+                f"No contesto el /health en {self._timeout_salud:g} s."
+            ) from None
+        except httpx.HTTPError as exc:
+            raise SucursalSinRespuesta(f"{type(exc).__name__}: {exc}") from exc
+
+        if resp.status_code >= 400:
+            raise SucursalSinRespuesta(_detalle_de_error(resp))
+        try:
+            cuerpo = resp.json()
+        except ValueError:
+            raise SucursalSinRespuesta(
+                "Contesto 200 pero el cuerpo del /health no es JSON. Suele ser el "
+                "fallback de la SPA: esa URL no es la de la instancia (url_base "
+                "mal cargada)."
+            ) from None
+        if not isinstance(cuerpo, dict):
+            raise SucursalSinRespuesta(
+                f"Contesto 200 con un {type(cuerpo).__name__} y no con un objeto "
+                "JSON en el /health."
+            )
+        version = cuerpo.get("version")
+        return {"version": version if isinstance(version, str) and version else None}
 
     async def resumen(self, *, url_base: str, credencial: str, desde: str, hasta: str) -> dict:
         """El resumen de una sucursal, o `SucursalSinRespuesta`.

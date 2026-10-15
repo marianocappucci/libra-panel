@@ -36,11 +36,29 @@ os.environ.setdefault("LIBRA_PANEL_ADMIN_USERNAME", "admin")
 
 import pytest  # noqa: E402
 from libraauth import session_auth as _session_auth  # noqa: E402
+from libracore.testing.pg_por_worker import base_por_worker  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from libra_panel import db  # noqa: E402
 from libra_panel.app import create_app  # noqa: E402
 from libra_panel.settings import Settings  # noqa: E402
+
+# ── Una base por worker de xdist ───────────────────────────────────────────
+#
+# La suite corre con `pytest -n 4` (reglas/ci.md del wiki) y los workers no
+# pueden compartir base: cada test borra las `TABLAS` y deja que `create_app`
+# las rearme, asi que dos procesos se pisarian el schema. El mecanismo vive en
+# `libracore.testing.pg_por_worker` (libracore >= v1.122.0): crea `<base>_gwN` y la
+# borra al salir. La base ORIGINAL tiene que existir (en el CI la crea el servicio
+# de PostgreSQL).
+#
+# Se pisa la variable con la URL del worker ANTES de que nadie la lea: la leen
+# `_url_de_test()` y `test_recifrar_cli.py`. El proceso que lanza a xdist tambien
+# importa este archivo y sus workers heredan su entorno; `base_por_worker` ya
+# lo maneja (guarda la URL original aparte).
+_PG = base_por_worker("libra_panel", (os.environ.get("LIBRA_PANEL_TEST_DATABASE_URL") or "").strip())
+if _PG:
+    os.environ["LIBRA_PANEL_TEST_DATABASE_URL"] = _PG.url
 
 #: Tablas que la suite vacia entre tests. Se listan a mano y no se descubren
 #: del metadata porque son de DOS metadatas distintas (libraauth y el panel) y

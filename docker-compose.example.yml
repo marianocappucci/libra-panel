@@ -38,6 +38,8 @@ services:
       # Corto a propósito: una sucursal colgada no puede dejar al dueño
       # mirando un spinner.
       TIMEOUT_SUCURSAL: ${TIMEOUT_SUCURSAL:-6}
+      # Tope del /health de cada sucursal (GET /api/salud). Más corto: no hace ninguna cuenta.
+      TIMEOUT_SALUD: ${TIMEOUT_SALUD:-3}
       TZ: America/Argentina/Buenos_Aires
       # Procesos de uvicorn (el CMD de la imagen lo pasa a `--workers`). Se queda en 1: subirlo es una decision, no un
       # descuido. Con mas de uno el captcha del login ya anota en la base (`UsadosEnBase`, libraauth v0.50.0), pero la

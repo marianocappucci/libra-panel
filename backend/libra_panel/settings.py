@@ -20,6 +20,12 @@ class ConfiguracionInvalida(RuntimeError):
 #: sucursal pasa a "sin respuesta" y el resto se muestra igual.
 TIMEOUT_POR_DEFECTO = 6.0
 
+#: Timeout del chequeo de salud (`GET /api/salud`), en segundos. **Más corto que
+#: el del resumen**: el resumen hace una cuenta en la sucursal y el `/health` no
+#: hace nada, así que una sucursal que no contesta el `/health` en esto está
+#: caída o colgada, y la pantalla de salud no tiene que esperar más que eso.
+TIMEOUT_SALUD_POR_DEFECTO = 3.0
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -32,6 +38,8 @@ class Settings:
     #: Donde aterriza el link del mail de recupero. Sin esto el recupero existe
     #: igual, pero el mail apunta a una URL que no es la del cliente.
     reset_url_base: str
+    #: Con default para no romper a quien arme un `Settings` a mano (los tests).
+    timeout_salud: float = TIMEOUT_SALUD_POR_DEFECTO
 
     @property
     def es_desarrollo(self) -> bool:
@@ -68,9 +76,23 @@ def cargar_settings(env: dict | None = None) -> Settings:
             "sola sucursal colgada cuelga la pantalla entera."
         )
 
+    crudo_salud = (env.get("TIMEOUT_SALUD") or "").strip()
+    try:
+        timeout_salud = float(crudo_salud) if crudo_salud else TIMEOUT_SALUD_POR_DEFECTO
+    except ValueError:
+        raise ConfiguracionInvalida(
+            f"TIMEOUT_SALUD={crudo_salud!r} no es un numero de segundos."
+        ) from None
+    if timeout_salud <= 0:
+        raise ConfiguracionInvalida(
+            "TIMEOUT_SALUD tiene que ser mayor que cero: sin timeout, una sola "
+            "sucursal colgada cuelga la pantalla de salud entera."
+        )
+
     return Settings(
         panel_name=(env.get("PANEL_NAME") or "Panel").strip(),
         database_url=database_url,
         timeout_sucursal=timeout,
         reset_url_base=(env.get("LIBRA_PANEL_RESET_URL_BASE") or "").strip(),
+        timeout_salud=timeout_salud,
     )

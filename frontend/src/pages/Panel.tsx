@@ -9,9 +9,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-import { ApiError, panel, type Resumen } from '../api'
+import { ApiError, panel, type Resumen, type Salud } from '../api'
 import { Consolidado } from '../components/Bloques'
 import { AvisoParcial, ContadorCobertura } from '../components/Cobertura'
+import { SaludSucursales } from '../components/SaludSucursales'
 import { hoyIso, periodoLegible, primerDiaDelMesIso } from '../lib/fecha'
 
 export function Panel() {
@@ -44,6 +45,26 @@ export function Panel() {
     void cargar()
   }, [cargar])
 
+  // El estado de las sucursales va por su cuenta: no depende del período (por
+  // eso no cuelga de `cargar`) y NO puede tumbar el resumen, ni al revés. Si
+  // falla, se borra lo viejo y se dice, igual que arriba: un «responde» de hace
+  // diez minutos no es el estado de ahora.
+  const [salud, setSalud] = useState<Salud | null>(null)
+  const [errorSalud, setErrorSalud] = useState(false)
+  const cargarSalud = useCallback(async () => {
+    setErrorSalud(false)
+    try {
+      setSalud(await panel.salud())
+    } catch {
+      setSalud(null)
+      setErrorSalud(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    void cargarSalud()
+  }, [cargarSalud])
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
@@ -72,7 +93,14 @@ export function Panel() {
           </div>
           {/* Actualizar es volver a preguntarle a las N sucursales: no hay
               caché que refrescar. */}
-          <Button variant="outline" onClick={() => void cargar()} disabled={cargando}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void cargar()
+              void cargarSalud()
+            }}
+            disabled={cargando}
+          >
             <RefreshCw className={cargando ? 'animate-spin' : ''} />
             Actualizar
           </Button>
@@ -81,6 +109,13 @@ export function Panel() {
 
       {error && (
         <p role="alert" className="text-sm text-destructive">{error}</p>
+      )}
+
+      {salud && <SaludSucursales salud={salud} />}
+      {errorSalud && (
+        <p className="text-sm text-muted-foreground" data-testid="salud-error">
+          No se pudo consultar el estado de las sucursales.
+        </p>
       )}
 
       {cargando && !datos && (

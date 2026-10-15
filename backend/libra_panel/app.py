@@ -28,6 +28,7 @@ from libraauth.password_reset import PasswordResetService
 from libraauth.repository import UserRepository
 from libraauth.session_auth import SessionAuth, build_json_api_auth_router
 from libraauth.smtp_settings import SmtpSettingsRepository, resolver_smtp_config
+from libracore.docs_api import cerrar_docs_de_la_api
 from libracore.errores import instalar_registro_de_errores
 from libracore.security_headers import SecurityHeadersMiddleware
 
@@ -39,7 +40,7 @@ from .cliente_sucursal import ClienteSucursal
 # abajo las cree. Sin el, las tablas no existen y no falla nada al arrancar.
 from .models import ROLES
 from .repositorio import RegistroDeSucursales
-from .routers import empleados, resumen, sucursales, usuarios
+from .routers import empleados, resumen, salud, sucursales, usuarios
 from .settings import Settings, cargar_settings
 
 # Fallback de desarrollo para el `SECRET_KEY` de la cookie. `_resolve_secret_key`
@@ -129,7 +130,11 @@ def create_app(
     # en los logs del contenedor.
     ensure_default_admin(users, env_prefix="LIBRA_PANEL")
 
-    app = FastAPI(title=f"{settings.panel_name} — Panel", docs_url=None, redoc_url=None)
+    app = FastAPI(title=f"{settings.panel_name} — Panel")
+    # `/docs`, `/redoc` y `/openapi.json` sólo en desarrollo (ADR-053 de libracore). Antes se apagaban `/docs` y `/redoc` con
+    # `docs_url=None`, pero faltaba `openapi_url`: `/openapi.json` publicaba, sin sesión, el mapa de todas las rutas del panel
+    # —y las tres rutas apagadas caían en el fallback de la SPA, que contesta `index.html` con 200—. Acá dan 404.
+    cerrar_docs_de_la_api(app)
     app.add_middleware(SecurityHeadersMiddleware)
     # El registro de errores de la familia (ADR-045 de libracore): un 500 deja una linea JSON en
     # `$LIBRA_ERRORES_DIR/errores.jsonl` con un `ref` que el usuario puede dictar, y se monta
@@ -158,7 +163,7 @@ def create_app(
     app.state.auth_events = AuthEventRepository(sessions)
     app.state.registro = RegistroDeSucursales(sessions)
     app.state.cliente_sucursal = cliente_sucursal or ClienteSucursal(
-        timeout=settings.timeout_sucursal
+        timeout=settings.timeout_sucursal, timeout_salud=settings.timeout_salud
     )
     app.state.smtp_settings = SmtpSettingsRepository(sessions)
     # Recupero por correo. Sin SMTP configurado la app **levanta igual**: el
@@ -206,6 +211,7 @@ def create_app(
         )
     )
     app.include_router(resumen.router)
+    app.include_router(salud.router)
     app.include_router(sucursales.router)
     app.include_router(sucursales.mis_router)
     app.include_router(usuarios.router)

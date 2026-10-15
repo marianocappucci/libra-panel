@@ -11,10 +11,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Resumen } from '../api'
 
 const resumenMock = vi.fn()
+// El estado de las sucursales tiene su propio archivo (`salud.test.tsx`). Acá se
+// dobla para que esta pantalla no salga a la red, y devuelve vacío: no dibuja nada.
+const saludMock = vi.fn()
 
 vi.mock('../api', async (importOriginal) => {
   const real = await importOriginal<typeof import('../api')>()
-  return { ...real, panel: { ...real.panel, resumen: resumenMock } }
+  return { ...real, panel: { ...real.panel, resumen: resumenMock, salud: saludMock } }
 })
 
 const { Panel } = await import('../pages/Panel')
@@ -82,6 +85,8 @@ function montar() {
 beforeEach(() => {
   resumenMock.mockReset()
   resumenMock.mockResolvedValue(CUATRO_DE_CINCO)
+  saludMock.mockReset()
+  saludMock.mockResolvedValue({ total: 0, respondieron: 0, sucursales: [] })
 })
 
 describe('el panel', () => {
