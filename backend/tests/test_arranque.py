@@ -44,6 +44,23 @@ def test_un_timeout_de_cero_no_arranca():
     assert "mayor que cero" in str(exc.value)
 
 
+def test_el_timeout_de_salud_es_mas_corto_que_el_del_resumen():
+    """El `/health` no hace ninguna cuenta: si no contesta en esto, esta caida."""
+    from libra_panel.settings import TIMEOUT_POR_DEFECTO, TIMEOUT_SALUD_POR_DEFECTO
+
+    s = cargar_settings({"LIBRA_PANEL_DATABASE_URL": BASE})
+    assert s.timeout_salud == TIMEOUT_SALUD_POR_DEFECTO
+    assert TIMEOUT_SALUD_POR_DEFECTO < TIMEOUT_POR_DEFECTO
+    assert cargar_settings({"LIBRA_PANEL_DATABASE_URL": BASE, "TIMEOUT_SALUD": "1.5"}).timeout_salud == 1.5
+
+
+@pytest.mark.parametrize("valor", ["un-rato", "0", "-2"])
+def test_un_timeout_de_salud_invalido_no_arranca(valor):
+    with pytest.raises(ConfiguracionInvalida) as exc:
+        cargar_settings({"LIBRA_PANEL_DATABASE_URL": BASE, "TIMEOUT_SALUD": valor})
+    assert "TIMEOUT_SALUD" in str(exc.value)
+
+
 def test_el_nombre_del_panel_sale_del_entorno():
     """El panel es transversal: el branding no puede estar en el codigo."""
     s = cargar_settings({"LIBRA_PANEL_DATABASE_URL": BASE, "PANEL_NAME": "Complejos Pádel"})

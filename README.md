@@ -90,6 +90,39 @@ El pedido fue en vivo. Cachear en vivo es contradecirse, y un total parcial
 cacheado se queda pegado después de que la sucursal volvió. La respuesta va con
 `Cache-Control: no-store` y cada pedido vuelve a preguntar.
 
+## El estado de las sucursales: `GET /api/salud`
+
+Análogo del `/api/salud` de [`libra-backoffice`](https://github.com/marianocappucci/libra-backoffice),
+con una diferencia de alcance: el backoffice lista las instancias de **todo un
+producto**; el panel, sólo **las del usuario** (`usuario_sucursales`, para todos
+los roles, igual que el resumen). Con la misma sesión que el resto: sin ella, 401.
+
+Le pregunta el `/health` a cada sucursal activa, **en paralelo y con un tope corto**
+(`TIMEOUT_SALUD`, 3 s: el `/health` no hace ninguna cuenta), y contesta:
+
+```json
+{
+  "total": 3, "respondieron": 2,
+  "sucursales": [
+    {"slug": "c1", "nombre": "Complejo Uno", "estado": "ok", "latencia_ms": 42,
+     "version": null, "detalle": "", "tiene_credencial": true},
+    {"slug": "c3", "nombre": "Complejo Tres", "estado": "sin_respuesta", "latencia_ms": 3001,
+     "version": null, "detalle": "No contestó el /health en 3 s.", "tiene_credencial": true}
+  ]
+}
+```
+
+- **Un 200 no alcanza.** El cuerpo tiene que ser un objeto JSON (sin exigir ninguna
+  clave): una `url_base` mal cargada contesta 200 con el `index.html` de la SPA y
+  figura `sin_respuesta`, con el motivo. Mismo criterio que el backoffice.
+- **No prueba la credencial**: el `/health` es público (y el panel no le manda la
+  credencial). Por eso cada fila trae `tiene_credencial`; la prueba de la
+  credencial sigue siendo `POST /api/sucursales/{slug}/probar` (admin).
+- `version` sale del cuerpo del `/health` **si la instancia la manda**; hoy ningún
+  producto lo hace, así que viene `null`.
+- La pantalla principal lo muestra como una fila de estados bajo el encabezado, aparte
+  del resumen: no se tumban entre sí. Sin caché (`no-store`), por lo mismo que arriba.
+
 ## La credencial es por sucursal, no por producto
 
 🔴 **`LIBRA_SERVICE_TOKEN` es por PRODUCTO.** Medido en el VPS el 2026-08-20:
@@ -159,6 +192,7 @@ Dockerfile              build del frontend -> estáticos servidos por el backend
 | `LIBRA_PANEL_ADMIN_USERNAME` | no | Default `admin`. |
 | `PANEL_NAME` | no | Nombre para mostrar. El panel es transversal: el branding sale de acá. |
 | `TIMEOUT_SUCURSAL` | no | Segundos por sucursal. Default 6. Corto a propósito. |
+| `TIMEOUT_SALUD` | no | Tope en segundos del `/health` de cada sucursal (`GET /api/salud`). Default 3: el `/health` no hace ninguna cuenta. |
 | `LIBRA_PANEL_RESET_URL_BASE` | no | Dónde aterriza el link del mail de recupero. |
 | `WEB_CONCURRENCY` | no | Procesos de uvicorn (`--workers` del `CMD`). Default 1. Ver «Varios procesos». |
 | `LIBRA_ERRORES_DIR` | no | Carpeta del registro de errores (`errores.jsonl`). Sin ella cae en `$DATA_DIR/errores` o en el directorio de trabajo, o sea **dentro del contenedor**: en producción se fija a una carpeta de un volumen (el compose de ejemplo la monta en `/var/lib/libra-panel/errores`). |
