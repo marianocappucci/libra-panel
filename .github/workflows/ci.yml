@@ -143,8 +143,13 @@ jobs:
 
       # El piso de cobertura (`fail_under`) está en pyproject.toml: es un
       # trinquete fijado 3 puntos debajo de lo medido, no una meta.
+      #
+      # `-n 4` (pytest-xdist, 4 = vCPU del runner; reglas/ci.md del wiki): una base de
+      # PostgreSQL por worker (`<base>_gwN`, tests/conftest.py,
+      # libracore.testing.pg_por_worker). `--cov` y su piso no se tocan: coverage
+      # combina los workers solo.
       - name: Tests
-        run: pytest -v --cov --cov-report=term-missing
+        run: pytest -v -n 4 --cov --cov-report=term-missing
 
   # En su propio job: no comparte nada con el de Python, y así el reporte dice
   # cuál de los dos falló en vez de un único job rojo.
