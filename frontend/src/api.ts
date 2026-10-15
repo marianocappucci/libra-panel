@@ -102,6 +102,30 @@ export type Resumen = {
   sucursales: FilaSucursal[]
 }
 
+/** Una fila de `GET /api/salud`: ¿esta sucursal contesta su `/health`?
+ *
+ * 🔑 **No dice que la credencial funcione**: el `/health` es público. Por eso
+ * viene `tiene_credencial`, para que un «responde» no se lea como «el resumen
+ * va a traer sus números». */
+export type SaludSucursal = {
+  slug: string
+  nombre: string
+  estado: 'ok' | 'sin_respuesta'
+  /** Lo que tardó en contestar o en rendirse, en milisegundos. */
+  latencia_ms: number | null
+  /** Sólo si la instancia la manda en su `/health`; hoy ninguna lo hace. */
+  version: string | null
+  /** El motivo, si no contestó. Vacío si contestó. */
+  detalle: string
+  tiene_credencial: boolean
+}
+
+export type Salud = {
+  total: number
+  respondieron: number
+  sucursales: SaludSucursal[]
+}
+
 export type PruebaSucursal = {
   slug: string
   ok: boolean
@@ -140,6 +164,9 @@ export const panel = {
   resumen: (desde: string, hasta: string) =>
     api.get<Resumen>(`/api/resumen?desde=${desde}&hasta=${hasta}`),
   misSucursales: () => api.get<Sucursal[]>('/api/mis-sucursales'),
+  // Aparte del resumen a propósito: el `/health` no hace ninguna cuenta y
+  // contesta en milisegundos. Tampoco se cachea.
+  salud: () => api.get<Salud>('/api/salud'),
 
   // Sólo admin de acá para abajo.
   sucursales: () => api.get<Sucursal[]>('/api/sucursales'),

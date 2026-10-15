@@ -39,7 +39,7 @@ from .cliente_sucursal import ClienteSucursal
 # abajo las cree. Sin el, las tablas no existen y no falla nada al arrancar.
 from .models import ROLES
 from .repositorio import RegistroDeSucursales
-from .routers import empleados, resumen, sucursales, usuarios
+from .routers import empleados, resumen, salud, sucursales, usuarios
 from .settings import Settings, cargar_settings
 
 # Fallback de desarrollo para el `SECRET_KEY` de la cookie. `_resolve_secret_key`
@@ -158,7 +158,7 @@ def create_app(
     app.state.auth_events = AuthEventRepository(sessions)
     app.state.registro = RegistroDeSucursales(sessions)
     app.state.cliente_sucursal = cliente_sucursal or ClienteSucursal(
-        timeout=settings.timeout_sucursal
+        timeout=settings.timeout_sucursal, timeout_salud=settings.timeout_salud
     )
     app.state.smtp_settings = SmtpSettingsRepository(sessions)
     # Recupero por correo. Sin SMTP configurado la app **levanta igual**: el
@@ -206,6 +206,7 @@ def create_app(
         )
     )
     app.include_router(resumen.router)
+    app.include_router(salud.router)
     app.include_router(sucursales.router)
     app.include_router(sucursales.mis_router)
     app.include_router(usuarios.router)
