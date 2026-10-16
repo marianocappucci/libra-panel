@@ -45,6 +45,13 @@ cobrar— sale de LibraCore, que está en los seis productos. Los bloques extra
 salen por motor: `comercio` de LibraCommerce (4 productos), `agenda` de
 LibraGenda (3).
 
+> **«Sin cobrar» desde libracore v1.172.0 (ADR-059): es lo que falta cobrar.** Antes
+> sumaba el total de las facturas sin ningún cobro; ahora suma lo que falta de cada
+> una (`total − cobrado − acreditado por notas de crédito`) y **incluye las facturas
+> cobradas a medias**, que antes desaparecían del bloque. Lo calcula cada sucursal
+> (`/api/resumen` es de su libracore), no el panel: hasta que una sucursal suba el
+> pin, sigue mandando el cálculo viejo, y el consolidado mezcla los dos.
+
 **El panel tiene base de datos, pero no de negocio.** Guarda sus usuarios, el
 registro de sucursales y quién ve cuál. Ningún número de ventas se copia nunca:
 se pregunta y se descarta. Si se guardaran habría dos verdades sobre la misma
