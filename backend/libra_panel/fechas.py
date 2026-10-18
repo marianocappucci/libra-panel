@@ -15,27 +15,29 @@ una constante de zona copiada en N lugares es divergencia esperando a pasar.
 """
 import datetime
 
-#: UTC-3 fijo, sin DST. Misma definicion que `_AR_TZ` de `libracore.db.core`.
+from libracore import fechas as _motor
+
+#: UTC-3 fijo, sin DST: la zona del motor (`libracore.fechas.ZONA_AR`, ADR-070).
 #: Se declara como offset y no como zona IANA a proposito: Argentina no aplica
 #: horario de verano, y un offset fijo no depende de que la imagen del
 #: contenedor tenga la base de datos de zonas instalada.
-AR_TZ = datetime.timezone(datetime.timedelta(hours=-3), name="ART")
+AR_TZ = _motor.ZONA_AR
 
 
 def ahora_ar() -> datetime.datetime:
-    """El instante actual en hora de Argentina."""
-    return datetime.datetime.now(AR_TZ)
+    """El instante actual en hora de Argentina (el reloj unico del motor)."""
+    return _motor.ahora()
 
 
 def hoy_ar() -> datetime.date:
-    """El dia de hoy en Argentina.
+    """El dia de hoy en Argentina (el reloj unico del motor).
 
     🔴 No es `date.today()`. Entre las 21:00 y la medianoche de Argentina, una
     maquina en UTC ya esta en el dia siguiente: el panel pediria "el mes en
     curso" arrancando el 1 del mes que viene y mostraria todo en cero. Es
     exactamente el tipo de cero que este producto existe para no mostrar.
     """
-    return ahora_ar().date()
+    return _motor.hoy()
 
 
 def rango_por_defecto() -> tuple[str, str]:
