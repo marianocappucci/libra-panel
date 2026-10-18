@@ -31,6 +31,7 @@ from libraauth.smtp_settings import SmtpSettingsRepository, resolver_smtp_config
 from libracore.docs_api import cerrar_docs_de_la_api
 from libracore.errores import instalar_registro_de_errores
 from libracore.security_headers import SecurityHeadersMiddleware
+from libracore.spa import archivo_publico
 
 from . import db
 from .cliente_sucursal import ClienteSucursal
@@ -177,7 +178,7 @@ def create_app(
         smtp_config=lambda: resolver_smtp_config(sessions),
     )
 
-    @app.get("/health", include_in_schema=False)
+    @app.api_route("/health", methods=["GET", "HEAD"], include_in_schema=False)
     def health():
         """Sin auth: la usan el healthcheck de Docker y el proxy."""
         return {"ok": True, "panel": settings.panel_name}
@@ -242,10 +243,17 @@ def _montar_frontend(app: FastAPI, frontend_dist: str | None) -> None:
 
     app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
-    @app.get("/{ruta:path}", include_in_schema=False)
+    # HEAD ademas de GET: un monitor que hace `curl -I` no puede recibir 405.
+    @app.api_route("/{ruta:path}", methods=["GET", "HEAD"], include_in_schema=False)
     def spa(ruta: str):
-        archivo = dist / ruta
-        if ruta and archivo.is_file():
+        # 🔴 `archivo_publico` (libracore.spa) y no `dist / ruta`: ese `ruta` es
+        # lo que el cliente mando, con sus `..` y hasta con una barra inicial
+        # (`//etc/hostname` -> `dist / "/etc/hostname"` es `/etc/hostname`). Sin
+        # resolverlo y verificar que quede adentro de `dist`, el fallback
+        # servia cualquier archivo del contenedor, `/proc/self/environ`
+        # incluido. Medido el 2026-10-18 desde adentro del VPS.
+        archivo = archivo_publico(dist, ruta)
+        if archivo is not None:
             return FileResponse(archivo)
         # 🔴 `index.html` **con `Cache-Control: no-cache`**. Sin esto el
         # navegador se queda con el HTML viejo, que referencia el bundle viejo
