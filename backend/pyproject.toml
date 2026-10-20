@@ -24,7 +24,7 @@ dependencies = [
     # v0.48.0 -> v0.49.0 (2026-10-12): `registrador_dbapi` y el formato del log en funciones puras (ADR-022). Sin migracion.
     # v0.49.0 -> v0.50.0 (2026-10-13): varios procesos (ADR-023): `UsadosEnBase` para el captcha (tabla `libraauth_captcha_usados`, migracion `0003`) y `AdminAuth` con `flock` sobre el JSON de estado.
     # v0.50.0 -> v0.51.0 (2026-10-15, ADR-024): el responsable acepta por adelantado la proxima version de los Terminos (`GET /terminos` suma `proxima`, `POST /aceptar` acepta la vigente o la proxima). Sin migracion; el aviso pide libra-ui v0.153.0.
-    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.51.0",
+    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.52.0",
     # Solo por `security_headers`, que es lo que hace que los seis productos y
     # el backoffice manden las mismas cabeceras. Se pinea igual que el resto de
     # la familia aunque el panel no use nada mas de este motor: el dia que
@@ -48,7 +48,16 @@ dependencies = [
     # v1.168.0 -> v1.170.0 (2026-10-15): v1.169.0 suma `fk_de_producto.soltar_fk` (ADR-056; sin efecto en este producto, la usa LibraDesk) y v1.170.0 hace que `delete_client` bloquee la baja de un cliente con cuenta corriente (`cc_pagos`, `cc_debitos`, `recibos` y `cc_asientos` con rol cliente; ADR-057): desactivarlo en vez de borrarlo. Sin migracion.
     # v1.170.0 -> v1.173.0 (2026-10-16): v1.171.0 (ADR-058) no se puede cobrar mas de lo que falta de una factura (409); v1.172.0 (ADR-059 y ADR-060) las notas de credito restan de lo pendiente (resumen y tablero cuentan tambien las cobradas a medias por lo que falta) y cobro por turno; v1.173.0 (ADR-061) una demo no habla con ARCA ni muestra datos fiscales reales (`libracore.demo`). Para este producto: el «Sin cobrar» del resumen pasa a ser lo que falta (no el total de la factura) e incluye las facturas cobradas a medias. Sin migracion.
     # v1.173.0 -> v1.176.0 (2026-10-17): v1.174.0 `OpcionesCajas.sucursal_por_defecto` (ADR-062, opt-in); v1.175.0 el pago a cuenta corriente bloquea sus facturas en una transaccion (ADR-063) y la nota de debito tiene tope de cobro (ADR-064, 409 si se cobra de mas); v1.176.0 la NC de una factura al contado cobrada acepta `destino` devolver/a_favor (ADR-065, sin `destino` como antes). Sin migracion.
-    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.176.0",
+    # v1.176.0 -> v1.181.0 (2026-10-18): v1.177.0 alta con 2 workers y 2 CPU; v1.178.0 lo pendiente de una ND visible (ADR-066); v1.179.0 la NC sin CAE recuerda el destino de la plata (ADR-067, **migracion 0027 aditiva**); v1.180.0 create_remito(conn=) (ADR-068); v1.181.0 HEAD en montar_spa (ADR-069).
+    # v1.181.0 -> v1.182.0 (2026-10-18): un solo reloj de Argentina para «hoy» y «ahora» (ADR-070, libracore.fechas.hoy/ahora). Sin migracion.
+    # v1.182.0 -> v1.183.0 (2026-10-18): tokens de servicio e integracion propios de cada instancia (ADR-071); con libraauth v0.52.0 (ADR-025, token anterior para rotar sin corte). Sin migracion.
+    # v1.183.0 -> v1.184.0 (2026-10-18): los cobros de MercadoPago con el CUIT de quien factura nacen ignorados y no se auto-facturan (ADR-072); `admin.services.clientes_dir()` publica. Sin migracion.
+    # v1.184.0 -> v1.184.1 (2026-10-18): tokens por instancia, `${VAR:?mensaje}` se lee del .env (corrige ADR-071). Sin migracion.
+    # v1.184.1 -> v1.185.0 (2026-10-18): la nota de debito de una factura a cuenta corriente hereda la cuenta: asienta su debito y se paga con recibo (ADR-073). Sin migracion.
+    # v1.185.0 -> v1.186.0 (2026-10-19): facturar en el nodo de LibraEdge con ticket prestado por el central y bandeja al volver (ADR-074). Sin migracion.
+    # v1.186.0 -> v1.186.1 (2026-10-19): la bandeja no deja descartar a mano una venta del nodo (completa ADR-074). Sin migracion.
+    # v1.186.1 -> v1.186.2 (2026-10-19): el motor se puede importar en Windows (bloqueo de archivo portable, nodo de LibraEdge). Sin migracion.
+    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.186.2",
     "fastapi>=0.111,<1",
     "uvicorn[standard]>=0.30,<1",
     # El panel le habla a cada sucursal por HTTP, en paralelo y con timeout.
