@@ -24,7 +24,8 @@ dependencies = [
     # v0.48.0 -> v0.49.0 (2026-10-12): `registrador_dbapi` y el formato del log en funciones puras (ADR-022). Sin migracion.
     # v0.49.0 -> v0.50.0 (2026-10-13): varios procesos (ADR-023): `UsadosEnBase` para el captcha (tabla `libraauth_captcha_usados`, migracion `0003`) y `AdminAuth` con `flock` sobre el JSON de estado.
     # v0.50.0 -> v0.51.0 (2026-10-15, ADR-024): el responsable acepta por adelantado la proxima version de los Terminos (`GET /terminos` suma `proxima`, `POST /aceptar` acepta la vigente o la proxima). Sin migracion; el aviso pide libra-ui v0.153.0.
-    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.52.0",
+    # v0.52.0 -> v0.53.0 (2026-10-20): la marca Secure de la cookie de sesion es configurable (LIBRAAUTH_COOKIE_SECURE, ADR-026); sin la variable no cambia nada. Sin migracion.
+    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.53.0",
     # Solo por `security_headers`, que es lo que hace que los seis productos y
     # el backoffice manden las mismas cabeceras. Se pinea igual que el resto de
     # la familia aunque el panel no use nada mas de este motor: el dia que
