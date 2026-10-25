@@ -77,3 +77,47 @@ export function metricasDe(datos: Record<string, unknown>, prefijo: string[] = [
   }
   return salida
 }
+
+// ── LibraClub ───────────────────────────────────────────────────────────────
+
+const UN_DECIMAL = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+
+/** `66,5 %`. Un dato que no vino (`null`) sale como «—», nunca como `0 %`. */
+export function formatearPorcentaje(valor: number | null | undefined): string {
+  return typeof valor === 'number' ? `${UN_DECIMAL.format(valor)} %` : '—'
+}
+
+/** `+23,8 %` / `−9,1 %`. Sin período anterior con qué comparar, «—». */
+export function formatearVariacion(valor: number | null | undefined): string {
+  if (typeof valor !== 'number') return '—'
+  const signo = valor > 0 ? '+' : valor < 0 ? '−' : ''
+  return `${signo}${UN_DECIMAL.format(Math.abs(valor))} %`
+}
+
+/** Un conteo que puede no haber venido. */
+export function formatearConteo(valor: number | null | undefined): string {
+  return typeof valor === 'number' ? ENTEROS.format(valor) : '—'
+}
+
+/** Plata que puede no haber venido. */
+export function formatearPlata(valor: number | null | undefined): string {
+  return typeof valor === 'number' ? formatoMoneda(valor) : '—'
+}
+
+/** 0 = lunes … 6 = domingo, como lo manda LibraClub. */
+export const DIAS_CORTOS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+export const DIAS_LARGOS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
+
+/** De dónde vino la reserva. Una clave que no se conoce sale prolija (`etiqueta`),
+ * nunca escondida: las claves de `origen` las manda cada instancia. */
+const ORIGENES: Record<string, string> = {
+  mostrador: 'Mostrador',
+  portal: 'Portal web',
+  whatsapp: 'WhatsApp',
+  telefono: 'Teléfono',
+  serie: 'Turno fijo (serie)',
+}
+
+export function etiquetaDeOrigen(clave: string): string {
+  return ORIGENES[clave] ?? etiqueta(clave)
+}

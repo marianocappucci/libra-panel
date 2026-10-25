@@ -94,10 +94,89 @@ export type FilaSucursal = {
   bloques: Record<string, Record<string, unknown>>
 }
 
+/** Una franja (día × hora) del mapa de calor. `dia`: 0 = lunes … 6 = domingo. */
+export type ClubFranja = {
+  dia: number
+  hora: number
+  ocupacion_pct: number | null
+  /** Sólo en el mapa combinado: de cuántas sucursales del club sale la celda. */
+  sucursales?: number
+}
+
+export type ClubIngresos = {
+  reservas: number | null
+  senas: number | null
+  buffet: number | null
+  total: number | null
+  total_periodo_anterior: number | null
+}
+
+/** Una sucursal **del club** (una sede), no del panel.
+ *
+ * 🔴 Para el panel, «sucursal» es una instancia registrada; para LibraClub es
+ * una sede dentro de una instancia. Acá `instancia` es la primera y `sucursal`
+ * la segunda. Un dato que no vino es `null`, no 0. */
+export type ClubFila = {
+  slug: string
+  instancia: string
+  sucursal_id: number | string | null
+  sucursal: string
+  ocupacion_pct: number | null
+  reservas: number | null
+  /** Horas abiertas y reservadas de la sede; `null` si la instancia no las manda. */
+  horas_abiertas: number | null
+  horas_reservadas: number | null
+  canceladas: number | null
+  ausentes: number | null
+  /** Todo en `null` si la instancia no tiene base de LibraCore: se ve «—», no 0. */
+  ingresos: ClubIngresos
+  /** Contra el período anterior. `null` si no hay con qué comparar. */
+  variacion_pct: number | null
+  /** Las claves las manda cada instancia y pueden variar. */
+  origen: Record<string, number>
+  franjas: ClubFranja[]
+}
+
+export type ClubTotales = {
+  sucursales: number
+  ocupacion_pct: number | null
+  /** Cómo se calculó `ocupacion_pct`: `ponderada_por_horas` (horas reservadas
+   *  sobre horas abiertas, si todas las sucursales las informan) o, si no,
+   *  `ponderada_por_reservas`. */
+  criterio_ocupacion: 'ponderada_por_horas' | 'ponderada_por_reservas' | string
+  reservas: number | null
+  canceladas: number | null
+  ausentes: number | null
+  ingresos: ClubIngresos
+  variacion_pct: number | null
+  origen: Record<string, number>
+}
+
+/** El bloque `club` de LibraClub, una fila por sucursal del club y sumado entre
+ * instancias. No viene si ninguna instancia lo manda: no es un club en cero. */
+export type Club = {
+  /** El período que dijeron las instancias en `club.desde` / `club.hasta`. */
+  desde: string | null
+  hasta: string | null
+  /** `false` si dos instancias contestaron períodos distintos. */
+  periodo_uniforme: boolean
+  /** De cuántas instancias salió; puede ser menos que las que contestaron. */
+  instancias: number
+  slugs: string[]
+  /** Instancias que mandaron `club` con una forma que no se puede leer. */
+  invalidos: { slug: string; nombre: string; detalle: string }[]
+  por_sucursal: ClubFila[]
+  totales: ClubTotales
+  /** El mapa de calor combinado. */
+  franjas: ClubFranja[]
+}
+
 export type Resumen = {
   periodo: { desde: string; hasta: string }
   cobertura: Cobertura
   consolidado: Record<string, Bloque>
+  /** Sólo LibraClub. `null` o ausente si ninguna instancia lo manda. */
+  club?: Club | null
   grupos: Grupo[]
   sucursales: FilaSucursal[]
 }
