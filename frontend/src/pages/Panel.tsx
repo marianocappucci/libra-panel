@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { ApiError, panel, type Resumen, type Salud } from '../api'
 import { Consolidado } from '../components/Bloques'
+import { VistaClub } from '../components/Club'
 import { AvisoParcial, ContadorCobertura } from '../components/Cobertura'
 import { SaludSucursales } from '../components/SaludSucursales'
 import { hoyIso, periodoLegible, primerDiaDelMesIso } from '../lib/fecha'
@@ -137,6 +138,9 @@ export function Panel() {
               <TabsTrigger value="todo">Todas juntas</TabsTrigger>
               <TabsTrigger value="cuit">Por razón social</TabsTrigger>
               <TabsTrigger value="sucursales">Sucursal por sucursal</TabsTrigger>
+              {/* Sólo si alguna instancia manda el bloque `club`: sin él no hay
+                  una vista vacía ni un club en cero. */}
+              {datos.club && <TabsTrigger value="club">Reservas y ocupación</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="todo" className="mt-4 space-y-4">
@@ -231,6 +235,12 @@ export function Panel() {
                 </Card>
               ))}
             </TabsContent>
+
+            {datos.club && (
+              <TabsContent value="club" className="mt-4">
+                <VistaClub club={datos.club} respondieron={datos.cobertura.respondieron} />
+              </TabsContent>
+            )}
           </Tabs>
         </>
       )}

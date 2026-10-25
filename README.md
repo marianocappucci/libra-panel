@@ -130,6 +130,58 @@ Le pregunta el `/health` a cada sucursal activa, **en paralelo y con un tope cor
 - La pantalla principal lo muestra como una fila de estados bajo el encabezado, aparte
   del resumen: no se tumban entre sí. Sin caché (`no-store`), por lo mismo que arriba.
 
+## El bloque `club` de LibraClub: una fila por sucursal, no por instancia
+
+El gate del ROADMAP de LibraClub: **«un dueño con dos instancias y cinco sucursales viendo
+cinco filas, no dos»**. Cada instancia de LibraClub agrega a su `/api/resumen` una clave
+`club` (`por_sucursal`: una entrada por sede, con ocupación, franjas día × hora, ingresos y
+su período anterior, canceladas, ausentes, reservas y origen). El panel la suma entre
+instancias en `club.py` (funciones puras, como `consolidado.py`) y la dibuja en la pestaña
+**Reservas y ocupación**, que sólo aparece si alguna instancia manda el bloque.
+
+> **Dos significados de «sucursal».** Para el panel, una *sucursal* es una **instancia**
+> registrada; para LibraClub, una *sucursal* es una **sede** dentro de una instancia. En la
+> respuesta y en la pantalla la primera es `slug` / `instancia` y la segunda `sucursal_id` /
+> `sucursal`. Una instancia con tres sedes aporta tres filas.
+
+`club` es una lista de filas y no un árbol de números, así que **no pasa por el consolidado
+genérico** (`NO_SON_BLOQUES` lo excluye): como bloque saldría vacío.
+
+```json
+"club": {
+  "instancias": 2, "slugs": ["norte", "sur"], "invalidos": [],
+  "por_sucursal": [{"slug": "norte", "instancia": "Club Norte", "sucursal_id": 1, "sucursal": "Centro",
+                    "ocupacion_pct": 60.0, "reservas": 100, "canceladas": 3, "ausentes": 2,
+                    "ingresos": {"reservas": 0.0, "senas": 200.0, "buffet": 300.0, "total": 1500.0, "total_periodo_anterior": 1200.0},
+                    "variacion_pct": 25.0, "origen": {"mostrador": 40, "portal": 50}, "franjas": [...]}],
+  "totales": {"sucursales": 5, "ocupacion_pct": 66.5, "criterio_ocupacion": "ponderada_por_reservas", "reservas": 800, ...},
+  "franjas": [{"dia": 0, "hora": 18, "ocupacion_pct": 70.0, "sucursales": 3}]
+}
+```
+
+Cómo se suma (el criterio está escrito en `club.py` y la pantalla lo repite):
+
+- **Conteos e ingresos**: suma simple. **Variación** = `(total − total_periodo_anterior) / total_periodo_anterior`;
+  sin período anterior (o en cero) es `null` y se ve «—», no `+∞` ni `0 %`.
+- 🔑 **Ocupación general: promedio ponderado por reservas** de cada sucursal. Un porcentaje no se
+  suma, y el promedio simple le daría el mismo peso a una sede de 3 reservas que a una de 300.
+  Lo exacto sería ponderar por capacidad (turnos disponibles), que el contrato no manda. Sin
+  reservas en ninguna, cae al promedio simple.
+- **Mapa de calor** (día × hora): combinado, con el mismo criterio por franja, o de la sucursal
+  elegida. Una franja que una sede no manda es «sin dato» (celda vacía), no `0 %`.
+- **Origen**: suma por clave, con las claves que vengan (hoy `mostrador`, `portal`, `whatsapp`,
+  `telefono`, `serie`); las que el panel no conoce se muestran igual, prolijas.
+
+Las mismas reglas que el resto del panel:
+
+- **Una instancia sin `club` no es un club en cero.** Una instancia vieja (o de otro producto)
+  no aporta filas ni baja el promedio; la pantalla dice «de 2 de 3 que contestaron». Si ninguna
+  manda el bloque, `club` es `null` y no hay pestaña.
+- **Un dato que no vino es `null`, no `0`** (también un valor con forma rara: texto, `NaN`, un
+  `bool`).
+- **Un `club` ilegible no tumba a las demás**: esa instancia queda en `club.invalidos`, con el
+  motivo, y se nombra en pantalla.
+
 ## La credencial es por sucursal, no por producto
 
 🔴 **`LIBRA_SERVICE_TOKEN` es por PRODUCTO.** Medido en el VPS el 2026-08-20:
@@ -183,6 +235,7 @@ está bien.
 ```
 backend/libra_panel/    FastAPI, API JSON
   consolidado.py        la suma. Funciones puras: es donde vive lo que puede mentir
+  club.py               el bloque `club` de LibraClub: una fila por sede, sumada entre instancias
   cliente_sucursal.py   el HTTP contra una sucursal, con timeout y validación de forma
   repositorio.py        el registro y las credenciales cifradas
 frontend/               Vite + React + shadcn/ui + libra-ui

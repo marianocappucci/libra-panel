@@ -214,10 +214,12 @@ def test_la_sucursal_caida_no_se_marca_como_identidad_incompleta():
     assert fila["identidad_incompleta"] is False
 
 
-def test_la_respuesta_completa_trae_las_cuatro_piezas():
+def test_la_respuesta_completa_trae_las_cinco_piezas():
     salida = armar_respuesta(
         desde="2026-08-01", hasta="2026-08-20",
         resultados=[sucursal("a", cuit="30111111119", razon_social="Padel SA", nucleo=NUCLEO)],
     )
-    assert set(salida) == {"periodo", "cobertura", "consolidado", "grupos", "sucursales"}
+    assert set(salida) == {"periodo", "cobertura", "consolidado", "club", "grupos", "sucursales"}
+    # Sin ninguna instancia de LibraClub no hay club: `None`, no un club en cero.
+    assert salida["club"] is None
     assert salida["periodo"] == {"desde": "2026-08-01", "hasta": "2026-08-20"}
