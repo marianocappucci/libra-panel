@@ -149,12 +149,13 @@ genérico** (`NO_SON_BLOQUES` lo excluye): como bloque saldría vacío.
 
 ```json
 "club": {
+  "desde": "2026-10-01", "hasta": "2026-10-24", "periodo_uniforme": true,
   "instancias": 2, "slugs": ["norte", "sur"], "invalidos": [],
   "por_sucursal": [{"slug": "norte", "instancia": "Club Norte", "sucursal_id": 1, "sucursal": "Centro",
-                    "ocupacion_pct": 60.0, "reservas": 100, "canceladas": 3, "ausentes": 2,
+                    "ocupacion_pct": 60.0, "reservas": 100, "horas_abiertas": 100, "horas_reservadas": 60, "canceladas": 3, "ausentes": 2,
                     "ingresos": {"reservas": 0.0, "senas": 200.0, "buffet": 300.0, "total": 1500.0, "total_periodo_anterior": 1200.0},
                     "variacion_pct": 25.0, "origen": {"mostrador": 40, "portal": 50}, "franjas": [...]}],
-  "totales": {"sucursales": 5, "ocupacion_pct": 66.5, "criterio_ocupacion": "ponderada_por_reservas", "reservas": 800, ...},
+  "totales": {"sucursales": 5, "ocupacion_pct": 60.8, "criterio_ocupacion": "ponderada_por_horas", "reservas": 800, ...},
   "franjas": [{"dia": 0, "hora": 18, "ocupacion_pct": 70.0, "sucursales": 3}]
 }
 ```
@@ -163,14 +164,26 @@ Cómo se suma (el criterio está escrito en `club.py` y la pantalla lo repite):
 
 - **Conteos e ingresos**: suma simple. **Variación** = `(total − total_periodo_anterior) / total_periodo_anterior`;
   sin período anterior (o en cero) es `null` y se ve «—», no `+∞` ni `0 %`.
-- 🔑 **Ocupación general: promedio ponderado por reservas** de cada sucursal. Un porcentaje no se
-  suma, y el promedio simple le daría el mismo peso a una sede de 3 reservas que a una de 300.
-  Lo exacto sería ponderar por capacidad (turnos disponibles), que el contrato no manda. Sin
-  reservas en ninguna, cae al promedio simple.
-- **Mapa de calor** (día × hora): combinado, con el mismo criterio por franja, o de la sucursal
-  elegida. Una franja que una sede no manda es «sin dato» (celda vacía), no `0 %`.
+- 🔑 **Ocupación general: ponderada por horas.** Un porcentaje no se suma, y el promedio simple le
+  daría el mismo peso a una sede de 3 reservas que a una de 300. Cada fila de `por_sucursal` trae
+  `horas_abiertas` y `horas_reservadas`; si **todas** las traen, la ocupación general es
+  `sum(horas_reservadas) / sum(horas_abiertas)` (`criterio_ocupacion: ponderada_por_horas`). Si a
+  alguna fila le faltan (una instancia de una versión anterior) no se mezclan los criterios: todo
+  cae al de antes, el promedio ponderado por `reservas` (`ponderada_por_reservas`; sin reservas en
+  ninguna, promedio simple). La pantalla escribe cuál se usó. Una sede sin horas abiertas viene con
+  `ocupacion_pct: null`: se ve «—» y no pesa en el cálculo.
+- **Mapa de calor** (día × hora): combinado, con el mismo criterio por franja (el peso de cada
+  sede es su `horas_abiertas` o sus `reservas`, según el criterio) o de la sucursal elegida. Una
+  franja que una sede no manda es «sin dato» (celda vacía), no `0 %`.
+- **`ingresos` puede venir `null`** (instancia sin base de LibraCore): todo queda `null`, se ve «—»
+  y no suma como 0; los totales salen de las sedes que sí lo informan.
 - **Origen**: suma por clave, con las claves que vengan (hoy `mostrador`, `portal`, `whatsapp`,
   `telefono`, `serie`); las que el panel no conoce se muestran igual, prolijas.
+
+**Período.** El panel manda siempre `?desde=&hasta=` (por defecto, del 1 del mes al día de hoy
+en hora de Argentina; sin rango, el backend también cae al mes en curso). La vista muestra el
+período que contestaron las instancias (`club.desde` / `club.hasta`), y avisa si dos instancias
+contestaron períodos distintos (`periodo_uniforme: false`).
 
 Las mismas reglas que el resto del panel:
 

@@ -31,25 +31,33 @@ Las reglas de `consolidado.py` valen igual:
 - Conteos (`reservas`, `canceladas`, `ausentes`) e ingresos: suma simple.
 - `variacion_pct`: `(total - total_periodo_anterior) / total_periodo_anterior`.
   Sin periodo anterior (o en cero) no hay contra que comparar: `None`, no `+inf`.
-- 🔑 **Ocupacion general: promedio ponderado por `reservas`** de cada sucursal.
-  Un porcentaje no se suma, y el promedio simple le da el mismo peso a una sede
-  con 3 reservas que a una con 300. Lo exacto seria ponderar por la capacidad
-  (turnos disponibles), que el contrato no manda; las reservas son el mejor
-  sustituto a mano. Si todas las ponderadas tienen cero reservas, cae al
-  promedio simple. Una sucursal sin `ocupacion_pct` queda fuera del promedio.
-- El mapa de calor combinado usa el mismo criterio por franja (dia, hora), entre
-  las sucursales que informan esa franja. Una franja que una sucursal no manda es
-  «sin dato», no 0 %.
+- 🔑 **Ocupacion general: ponderada por horas.** Un porcentaje no se suma, y el promedio
+  simple le da el mismo peso a una sede de 3 reservas que a una de 300. Cuando **todas**
+  las filas traen `horas_abiertas` y `horas_reservadas` (numeros), la ocupacion general es
+  `sum(horas_reservadas) / sum(horas_abiertas)`: es la cuenta exacta, porque la
+  ocupacion de cada sede ya es esa misma razon. Si alguna fila no las trae (una instancia
+  de una version anterior), **ninguna** se mezcla: cae al criterio de antes, el promedio
+  ponderado por `reservas` (y, si todas tienen cero reservas, al promedio simple). Mezclar
+  los dos criterios en un mismo numero no seria ni uno ni el otro. La respuesta dice cual
+  uso en `criterio_ocupacion`. Una sucursal sin `ocupacion_pct` (sin horas abiertas) queda
+  fuera del criterio por reservas y suma 0 horas abiertas en el criterio por horas.
+- El mapa de calor combinado usa el mismo criterio por franja (dia, hora), entre las
+  sucursales que informan esa franja: el peso de cada sede es su `horas_abiertas` (o sus
+  `reservas`, segun el criterio). Una franja que una sucursal no manda es «sin dato», no 0 %.
+- `ingresos` puede venir `null` (instancia sin base de LibraCore): queda todo en `None`, se ve
+  «—» y no suma como 0.
 - `origen`: suma por clave, con las claves que vengan (pueden variar).
 """
 
+import datetime
 import math
 
 #: Claves de `ingresos` que se suman. El resto de lo que mande la instancia se ignora.
 CLAVES_INGRESOS = ("reservas", "senas", "buffet", "total", "total_periodo_anterior")
 
-#: Criterio de la ocupacion general, para que la pantalla lo diga con todas las letras.
-CRITERIO_OCUPACION = "ponderada_por_reservas"
+#: Criterios de la ocupacion general, para que la pantalla lo diga con todas las letras.
+CRITERIO_HORAS = "ponderada_por_horas"
+CRITERIO_RESERVAS = "ponderada_por_reservas"
 
 
 def _numero(valor) -> float | int | None:
@@ -127,6 +135,16 @@ def _ingresos(crudo) -> dict[str, float | int | None]:
     return {clave: _numero(crudo.get(clave)) for clave in CLAVES_INGRESOS}
 
 
+def _fecha(valor) -> str | None:
+    """La fecha ISO (`aaaa-mm-dd`), o `None` si no lo es."""
+    if not isinstance(valor, str):
+        return None
+    try:
+        return datetime.date.fromisoformat(valor).isoformat()
+    except ValueError:
+        return None
+
+
 def _fila(slug: str, instancia: str, cruda) -> dict | None:
     """Una sucursal del club como fila del panel, o `None` si no es un objeto."""
     if not isinstance(cruda, dict):
@@ -139,6 +157,8 @@ def _fila(slug: str, instancia: str, cruda) -> dict | None:
         "sucursal": str(cruda.get("sucursal") or ""),
         "ocupacion_pct": _redondear(_numero(cruda.get("ocupacion_pct"))),
         "reservas": _entero(cruda.get("reservas")),
+        "horas_abiertas": _numero(cruda.get("horas_abiertas")),
+        "horas_reservadas": _numero(cruda.get("horas_reservadas")),
         "canceladas": _entero(cruda.get("canceladas")),
         "ausentes": _entero(cruda.get("ausentes")),
         "ingresos": ingresos,
@@ -153,11 +173,33 @@ def _sumar(filas: list[dict], clave: str) -> int | None:
     return sum(valores) if valores else None
 
 
-def _franjas_combinadas(filas: list[dict]) -> list[dict]:
-    """Cada franja, ponderada por las reservas de las sucursales que la informan."""
+def _criterio(filas: list[dict]) -> str:
+    """`ponderada_por_horas` si TODAS las filas traen las dos columnas de horas."""
+    if filas and all(f["horas_abiertas"] is not None and f["horas_reservadas"] is not None for f in filas):
+        return CRITERIO_HORAS
+    return CRITERIO_RESERVAS
+
+
+def _peso(fila: dict, criterio: str) -> float:
+    return (fila["horas_abiertas"] if criterio == CRITERIO_HORAS else fila["reservas"]) or 0
+
+
+def _ocupacion_general(filas: list[dict], criterio: str) -> float | None:
+    if criterio == CRITERIO_HORAS:
+        abiertas = sum(f["horas_abiertas"] for f in filas)
+        if abiertas <= 0:
+            return None
+        return _redondear(sum(f["horas_reservadas"] for f in filas) / abiertas * 100)
+    return _redondear(promedio_ponderado(
+        [(f["ocupacion_pct"], f["reservas"] or 0) for f in filas if f["ocupacion_pct"] is not None]
+    ))
+
+
+def _franjas_combinadas(filas: list[dict], criterio: str) -> list[dict]:
+    """Cada franja, ponderada (horas abiertas o reservas) por las sucursales que la informan."""
     por_celda: dict[tuple[int, int], list[tuple[float, float]]] = {}
     for f in filas:
-        peso = f["reservas"] or 0
+        peso = _peso(f, criterio)
         for franja in f["franjas"]:
             por_celda.setdefault((franja["dia"], franja["hora"]), []).append(
                 (franja["ocupacion_pct"], peso)
@@ -184,12 +226,11 @@ def totales(filas: list[dict]) -> dict:
     for f in filas:
         for clave, cantidad in f["origen"].items():
             origen[clave] = origen.get(clave, 0) + cantidad
+    criterio = _criterio(filas)
     return {
         "sucursales": len(filas),
-        "ocupacion_pct": _redondear(
-            promedio_ponderado([(f["ocupacion_pct"], f["reservas"] or 0) for f in filas if f["ocupacion_pct"] is not None])
-        ),
-        "criterio_ocupacion": CRITERIO_OCUPACION,
+        "ocupacion_pct": _ocupacion_general(filas, criterio),
+        "criterio_ocupacion": criterio,
         "reservas": _sumar(filas, "reservas"),
         "canceladas": _sumar(filas, "canceladas"),
         "ausentes": _sumar(filas, "ausentes"),
@@ -208,6 +249,7 @@ def armar_club(reportes: list[tuple[str, str, dict | None]]) -> dict | None:
     filas: list[dict] = []
     slugs: list[str] = []
     invalidos: list[dict] = []
+    periodos: set[tuple[str, str]] = set()
     for slug, nombre, datos in reportes:
         if not isinstance(datos, dict) or "club" not in datos:
             continue
@@ -223,6 +265,9 @@ def armar_club(reportes: list[tuple[str, str, dict | None]]) -> dict | None:
             })
             continue
         slugs.append(slug)
+        desde, hasta = _fecha(club.get("desde")), _fecha(club.get("hasta"))
+        if desde and hasta:
+            periodos.add((desde, hasta))
         for cruda in sucursales:
             fila = _fila(slug, nombre, cruda)
             if fila is not None:
@@ -232,11 +277,18 @@ def armar_club(reportes: list[tuple[str, str, dict | None]]) -> dict | None:
         return None
 
     return {
+        # El periodo que las instancias dicen haber calculado (`club.desde` /
+        # `club.hasta`), que es el que se lee en pantalla. Si dos instancias
+        # contestaron periodos distintos, se toma el rango que los cubre y
+        # `periodo_uniforme` lo dice: esos numeros no son del mismo periodo.
+        "desde": min((d for d, _ in periodos), default=None),
+        "hasta": max((h for _, h in periodos), default=None),
+        "periodo_uniforme": len(periodos) <= 1,
         # De cuantas instancias salio: puede ser menos que las que contestaron.
         "instancias": len(slugs),
         "slugs": slugs,
         "invalidos": invalidos,
         "por_sucursal": filas,
         "totales": totales(filas),
-        "franjas": _franjas_combinadas(filas),
+        "franjas": _franjas_combinadas(filas, _criterio(filas)),
     }

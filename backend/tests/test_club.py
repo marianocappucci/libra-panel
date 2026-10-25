@@ -150,6 +150,136 @@ def test_el_mapa_combinado_pondera_por_reservas_y_cuenta_de_cuantas_sucursales_s
     assert len(franjas) == 2
 
 
+# ── Ocupacion ponderada por horas (cuando las filas las traen) ───────────────
+
+#: `(abiertas, reservadas)` de cada sede, en el orden de NORTE y SUR. Reservadas / abiertas
+#: da la ocupacion de cada una (60, 80, 50, 70, 42 %), asi que las dos columnas son coherentes
+#: con `ocupacion_pct`. Las horas abiertas pesan distinto que las reservas a proposito.
+HORAS = [(100, 60), (200, 160), (300, 150), (150, 105), (100, 42)]
+
+
+def con_horas(*clubes, horas=HORAS):
+    """Copias de los clubes con `horas_abiertas` y `horas_reservadas` en cada sede."""
+    it = iter(horas)
+    salida = []
+    for c in clubes:
+        filas = []
+        for f in c["por_sucursal"]:
+            abiertas, reservadas = next(it)
+            filas.append({**f, "horas_abiertas": abiertas, "horas_reservadas": reservadas})
+        salida.append({**c, "por_sucursal": filas})
+    return salida
+
+
+def test_con_horas_la_ocupacion_general_es_reservadas_sobre_abiertas():
+    norte, sur = con_horas(NORTE, SUR)
+    t = armar_club(reportes(norte=datos_de(club=norte), sur=datos_de(club=sur)))["totales"]
+
+    # (60 + 160 + 150 + 105 + 42) / (100 + 200 + 300 + 150 + 100)
+    assert t["ocupacion_pct"] == 60.8
+    assert t["criterio_ocupacion"] == "ponderada_por_horas"
+    assert t["ocupacion_pct"] != 66.5  # lo que daria el criterio por reservas
+
+
+def test_con_horas_el_mapa_combinado_pesa_por_horas_abiertas():
+    norte, sur = con_horas(NORTE, SUR)
+    franjas = {
+        (f["dia"], f["hora"]): f
+        for f in armar_club(reportes(norte=datos_de(club=norte), sur=datos_de(club=sur)))["franjas"]
+    }
+    # Lunes 18 h: 90 (100 h abiertas), 70 (200) y 50 (300) -> 38000 / 600.
+    assert franjas[(0, 18)]["ocupacion_pct"] == 63.3
+    assert franjas[(0, 18)]["sucursales"] == 3
+
+
+def test_las_filas_traen_sus_horas():
+    norte, sur = con_horas(NORTE, SUR)
+    fila = armar_club(reportes(norte=datos_de(club=norte), sur=datos_de(club=sur)))["por_sucursal"][1]
+    assert (fila["horas_abiertas"], fila["horas_reservadas"]) == (200, 160)
+
+
+def test_si_a_una_fila_le_faltan_las_horas_no_se_mezclan_los_criterios():
+    norte, sur = con_horas(NORTE, SUR)
+    # Una sede de una version anterior, sin las columnas: ninguna se pondera por horas.
+    del sur["por_sucursal"][2]["horas_abiertas"]
+    t = armar_club(reportes(norte=datos_de(club=norte), sur=datos_de(club=sur)))["totales"]
+
+    assert t["criterio_ocupacion"] == "ponderada_por_reservas"
+    assert t["ocupacion_pct"] == 66.5
+
+
+def test_una_sede_sin_horas_abiertas_no_aporta_ocupacion_ni_se_cuenta_como_cero():
+    norte, sur = con_horas(NORTE, SUR)
+    cerrada = {**sur["por_sucursal"][2], "ocupacion_pct": None, "horas_abiertas": 0, "horas_reservadas": 0}
+    sur["por_sucursal"][2] = cerrada
+    salida = armar_club(reportes(norte=datos_de(club=norte), sur=datos_de(club=sur)))
+
+    assert salida["por_sucursal"][4]["ocupacion_pct"] is None
+    # La cerrada es Puerto (100 h abiertas, 42 reservadas), que ya no pesa en ningun lado:
+    # (60 + 160 + 150 + 105) / (100 + 200 + 300 + 150) = 475 / 750
+    assert salida["totales"]["ocupacion_pct"] == 63.3
+
+
+def test_si_nadie_tiene_horas_abiertas_no_hay_ocupacion_general():
+    sola = con_horas(club(sede(1, "Cerrada", ocupacion=None, reservas=0, total=0.0, anterior=0.0)),
+                     horas=[(0, 0)])[0]
+    t = armar_club(reportes(norte=datos_de(club=sola)))["totales"]
+
+    assert t["criterio_ocupacion"] == "ponderada_por_horas"
+    assert t["ocupacion_pct"] is None
+
+
+# ── Ingresos null: instancia sin base de LibraCore ──────────────────────────
+
+
+def test_ingresos_null_queda_en_none_y_no_suma_como_cero():
+    sin_base = {**sede(9, "Sin base", ocupacion=None, reservas=5, total=0.0, anterior=0.0), "ingresos": None}
+    salida = armar_club(reportes(
+        norte=datos_de(club=NORTE), sin=datos_de(club=club(sin_base)),
+    ))
+    fila = salida["por_sucursal"][-1]
+
+    assert fila["ingresos"] == {c: None for c in ("reservas", "senas", "buffet", "total", "total_periodo_anterior")}
+    assert fila["variacion_pct"] is None
+    assert fila["ocupacion_pct"] is None
+    # Los totales salen de las que si tienen ingresos: 1500 + 3000.
+    assert salida["totales"]["ingresos"]["total"] == 4500.0
+    assert salida["totales"]["variacion_pct"] == 0.0  # 4500 contra 4500
+
+
+def test_si_ninguna_sede_tiene_ingresos_el_total_es_none():
+    sin_base = {**sede(9, "Sin base", ocupacion=50.0, reservas=5, total=0.0, anterior=0.0), "ingresos": None}
+    t = armar_club(reportes(sin=datos_de(club=club(sin_base))))["totales"]
+
+    assert t["ingresos"]["total"] is None
+    assert t["variacion_pct"] is None
+
+
+# ── El periodo que dice la instancia ────────────────────────────────────────
+
+
+def test_el_periodo_sale_del_club_de_las_instancias():
+    salida = armar_club(reportes(norte=datos_de(club=NORTE), sur=datos_de(club=SUR)))
+
+    assert (salida["desde"], salida["hasta"]) == ("2026-10-01", "2026-10-24")
+    assert salida["periodo_uniforme"] is True
+
+
+def test_si_las_instancias_contestan_periodos_distintos_se_dice():
+    otro = {**SUR, "desde": "2026-09-01", "hasta": "2026-09-30"}
+    salida = armar_club(reportes(norte=datos_de(club=NORTE), sur=datos_de(club=otro)))
+
+    assert (salida["desde"], salida["hasta"]) == ("2026-09-01", "2026-10-24")
+    assert salida["periodo_uniforme"] is False
+
+
+def test_un_periodo_que_no_es_fecha_se_ignora():
+    roto = {**NORTE, "desde": "ayer", "hasta": 5}
+    salida = armar_club(reportes(norte=datos_de(club=roto)))
+
+    assert salida["desde"] is None and salida["hasta"] is None
+
+
 # ── Regla: un bloque que no esta no es un bloque en cero ────────────────────
 
 

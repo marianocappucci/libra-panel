@@ -123,8 +123,12 @@ export type ClubFila = {
   sucursal: string
   ocupacion_pct: number | null
   reservas: number | null
+  /** Horas abiertas y reservadas de la sede; `null` si la instancia no las manda. */
+  horas_abiertas: number | null
+  horas_reservadas: number | null
   canceladas: number | null
   ausentes: number | null
+  /** Todo en `null` si la instancia no tiene base de LibraCore: se ve «—», no 0. */
   ingresos: ClubIngresos
   /** Contra el período anterior. `null` si no hay con qué comparar. */
   variacion_pct: number | null
@@ -136,8 +140,10 @@ export type ClubFila = {
 export type ClubTotales = {
   sucursales: number
   ocupacion_pct: number | null
-  /** Cómo se calculó `ocupacion_pct`: hoy siempre `ponderada_por_reservas`. */
-  criterio_ocupacion: string
+  /** Cómo se calculó `ocupacion_pct`: `ponderada_por_horas` (horas reservadas
+   *  sobre horas abiertas, si todas las sucursales las informan) o, si no,
+   *  `ponderada_por_reservas`. */
+  criterio_ocupacion: 'ponderada_por_horas' | 'ponderada_por_reservas' | string
   reservas: number | null
   canceladas: number | null
   ausentes: number | null
@@ -149,6 +155,11 @@ export type ClubTotales = {
 /** El bloque `club` de LibraClub, una fila por sucursal del club y sumado entre
  * instancias. No viene si ninguna instancia lo manda: no es un club en cero. */
 export type Club = {
+  /** El período que dijeron las instancias en `club.desde` / `club.hasta`. */
+  desde: string | null
+  hasta: string | null
+  /** `false` si dos instancias contestaron períodos distintos. */
+  periodo_uniforme: boolean
   /** De cuántas instancias salió; puede ser menos que las que contestaron. */
   instancias: number
   slugs: string[]

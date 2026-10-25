@@ -16,7 +16,8 @@ function fila(
 ): ClubFila {
   return {
     slug, instancia, sucursal_id: id, sucursal,
-    ocupacion_pct: 50, reservas: 100, canceladas: 2, ausentes: 1,
+    ocupacion_pct: 50, reservas: 100, horas_abiertas: null, horas_reservadas: null,
+    canceladas: 2, ausentes: 1,
     ingresos: { reservas: 0, senas: 0, buffet: 0, total: 1000, total_periodo_anterior: 800 },
     variacion_pct: 25, origen: {}, franjas: [],
     ...extra,
@@ -24,6 +25,9 @@ function fila(
 }
 
 const CINCO: Club = {
+  desde: '2026-10-01',
+  hasta: '2026-10-24',
+  periodo_uniforme: true,
   instancias: 2,
   slugs: ['norte', 'sur'],
   invalidos: [],
@@ -116,8 +120,71 @@ describe('los totales y su criterio', () => {
     expect(totales).toHaveTextContent('Ocupación general')
     expect(totales).toHaveTextContent('66,5 %')
     expect(totales).toHaveTextContent('ponderado por reservas')
+    expect(screen.getByTestId('mapa-criterio')).toHaveTextContent('pondera por las reservas')
     expect(totales).toHaveTextContent('Contra el período anterior')
     expect(totales).toHaveTextContent('+23,8 %')
+  })
+})
+
+describe('el criterio por horas', () => {
+  const POR_HORAS: Club = {
+    ...CINCO,
+    totales: { ...CINCO.totales, ocupacion_pct: 60.8, criterio_ocupacion: 'ponderada_por_horas' },
+  }
+
+  it('dice que son horas reservadas sobre horas abiertas, en la tarjeta y en el mapa', () => {
+    render(<VistaClub club={POR_HORAS} respondieron={2} />)
+
+    const totales = screen.getByTestId('club-totales')
+    expect(totales).toHaveTextContent('60,8 %')
+    expect(totales).toHaveTextContent('Horas reservadas sobre horas abiertas')
+    expect(totales).not.toHaveTextContent('ponderado por reservas')
+    expect(screen.getByTestId('mapa-criterio')).toHaveTextContent('pondera por las horas abiertas')
+  })
+})
+
+describe('los datos que no vinieron', () => {
+  it('🔴 una sede sin base de LibraCore (ingresos null) y sin horas abiertas sale «—», no 0', () => {
+    const sinBase = fila('norte', 'Club Norte', 9, 'Sin base', {
+      ocupacion_pct: null, horas_abiertas: 0, horas_reservadas: 0,
+      ingresos: { reservas: null, senas: null, buffet: null, total: null, total_periodo_anterior: null },
+      variacion_pct: null,
+    })
+    const club: Club = {
+      ...CINCO,
+      por_sucursal: [sinBase],
+      totales: {
+        ...CINCO.totales, sucursales: 1, ocupacion_pct: null, variacion_pct: null,
+        ingresos: { reservas: null, senas: null, buffet: null, total: null, total_periodo_anterior: null },
+      },
+    }
+    render(<VistaClub club={club} respondieron={2} />)
+
+    const celdas = within(screen.getByTestId('fila-club')).getAllByRole('cell')
+    expect(celdas[2]).toHaveTextContent('—') // ocupación
+    expect(celdas[6]).toHaveTextContent('—') // ingresos
+    expect(celdas[7]).toHaveTextContent('—') // variación
+    const totales = screen.getByTestId('club-totales')
+    expect(totales).not.toHaveTextContent('$ 0')
+    expect(totales).not.toHaveTextContent('0,0 %')
+  })
+})
+
+describe('el período', () => {
+  it('muestra el período que dijeron las instancias en club.desde / club.hasta', () => {
+    render(<VistaClub club={CINCO} respondieron={2} />)
+    expect(screen.getByTestId('club-periodo')).toHaveTextContent('01-10-2026 al 24-10-2026')
+    expect(screen.queryByTestId('club-periodos-distintos')).toBeNull()
+  })
+
+  it('avisa si las instancias contestaron períodos distintos', () => {
+    render(<VistaClub club={{ ...CINCO, desde: '2026-09-01', periodo_uniforme: false }} respondieron={2} />)
+    expect(screen.getByTestId('club-periodos-distintos')).toHaveTextContent('períodos distintos')
+  })
+
+  it('sin período no inventa uno', () => {
+    render(<VistaClub club={{ ...CINCO, desde: null, hasta: null }} respondieron={2} />)
+    expect(screen.queryByTestId('club-periodo')).toBeNull()
   })
 })
 

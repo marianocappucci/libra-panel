@@ -20,6 +20,7 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import type { Club, ClubFila, ClubFranja } from '../api'
+import { periodoLegible } from '../lib/fecha'
 import {
   DIAS_CORTOS, DIAS_LARGOS, etiquetaDeOrigen, formatearConteo, formatearPlata,
   formatearPorcentaje, formatearVariacion,
@@ -85,6 +86,17 @@ function Cifra({
   )
 }
 
+/** Cómo se calculó la ocupación general, con todas las letras. */
+function textoDelCriterio(criterio: string): string | undefined {
+  if (criterio === 'ponderada_por_horas') {
+    return 'Horas reservadas sobre horas abiertas, sumadas entre sucursales.'
+  }
+  if (criterio === 'ponderada_por_reservas') {
+    return 'Promedio ponderado por reservas de cada sucursal (no todas informan horas).'
+  }
+  return undefined
+}
+
 // ── Totales ─────────────────────────────────────────────────────────────────
 
 function Totales({ club }: { club: Club }) {
@@ -95,11 +107,7 @@ function Totales({ club }: { club: Club }) {
         titulo="Ocupación general"
         valor={formatearPorcentaje(t.ocupacion_pct)}
         // El criterio, escrito: un porcentaje no se suma ni se promedia sin decir cómo.
-        nota={
-          t.criterio_ocupacion === 'ponderada_por_reservas'
-            ? 'Promedio ponderado por reservas de cada sucursal.'
-            : undefined
-        }
+        nota={textoDelCriterio(t.criterio_ocupacion)}
       />
       <Cifra titulo="Reservas" valor={formatearConteo(t.reservas)} />
       <Cifra titulo="Canceladas" valor={formatearConteo(t.canceladas)} />
@@ -309,8 +317,12 @@ function SeccionMapa({ club }: { club: Club }) {
         <div>
           <h3 className="text-sm font-semibold tracking-tight">Ocupación por día y hora</h3>
           {!fila && (
-            <p className="text-xs text-muted-foreground">
-              Combinado: cada franja pondera por las reservas de las sucursales que la informan.
+            <p className="text-xs text-muted-foreground" data-testid="mapa-criterio">
+              Combinado: cada franja pondera por{' '}
+              {club.totales.criterio_ocupacion === 'ponderada_por_horas'
+                ? 'las horas abiertas'
+                : 'las reservas'}{' '}
+              de las sucursales que la informan.
             </p>
           )}
         </div>
@@ -369,6 +381,19 @@ export function VistaClub({ club, respondieron }: { club: Club; respondieron: nu
         <h2 className="text-lg font-semibold tracking-tight">Reservas y ocupación</h2>
         <Leyenda club={club} respondieron={respondieron} />
       </div>
+
+      {/* El período que dijeron las instancias, no el que se pidió: si no se manda
+          rango el panel pide el mes en curso, y esto es lo que de verdad se calculó. */}
+      {club.desde && club.hasta && (
+        <p className="-mt-6 text-sm text-muted-foreground" data-testid="club-periodo">
+          Período: {periodoLegible(club.desde, club.hasta)}
+        </p>
+      )}
+      {!club.periodo_uniforme && (
+        <p role="alert" data-testid="club-periodos-distintos" className="text-sm text-destructive">
+          Las instancias contestaron períodos distintos: estos números no son todos del mismo período.
+        </p>
+      )}
 
       {club.invalidos.length > 0 && (
         // Una instancia mandó `club` con una forma que no se puede leer. Se
