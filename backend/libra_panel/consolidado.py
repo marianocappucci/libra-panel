@@ -21,11 +21,17 @@ Ver `wiki/analyses/panel-del-dueno-multisucursal.md`, puntos 3 y 9.
 import re
 from dataclasses import dataclass, field
 
+from .club import armar_club
+
 #: Claves de la respuesta de una sucursal que **no** son bloques de numeros.
 #: Todo lo demas que mande la sucursal se trata como bloque y se suma, para que
 #: un producto que agregue el bloque `agenda` de LibraGenda aparezca en el
 #: panel sin tocar este archivo.
-NO_SON_BLOQUES = frozenset({"instancia", "periodo"})
+#:
+#: `club` (LibraClub) tiene una lista de filas por sede, no un arbol de numeros:
+#: `sumar_bloque` ignora las listas y dejaria un bloque vacio. Lo arma
+#: `club.armar_club`, por sucursal del club y no por instancia.
+NO_SON_BLOQUES = frozenset({"instancia", "periodo", "club"})
 
 
 @dataclass(frozen=True)
@@ -266,6 +272,9 @@ def armar_respuesta(*, desde: str, hasta: str, resultados: list[ResultadoSucursa
         "periodo": {"desde": desde, "hasta": hasta},
         "cobertura": general["cobertura"],
         "consolidado": general["bloques"],
+        # `None` si ninguna instancia manda el bloque `club` (no es un club en
+        # cero): la pantalla no dibuja la vista.
+        "club": armar_club([(r.slug, r.nombre, r.datos) for r in resultados if r.ok]),
         "grupos": agrupar_por_cuit(resultados),
         "sucursales": [_fila_de_sucursal(r) for r in resultados],
     }
